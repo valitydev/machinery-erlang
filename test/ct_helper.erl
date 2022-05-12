@@ -51,13 +51,19 @@ start_apps(AppNames) ->
 
 -spec start_app(app_name()) -> {[Started :: app_name()], startup_ctx()}.
 start_app(scoper = AppName) ->
-    {start_app_with(AppName, [
+    {
+        start_app_with(AppName, [
             {storage, scoper_storage_logger}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(woody = AppName) ->
-    {start_app_with(AppName, [
+    {
+        start_app_with(AppName, [
             {acceptors_pool_size, 4}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(AppName) ->
     {start_app_with(AppName, []), #{}}.
 
