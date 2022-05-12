@@ -143,16 +143,14 @@ unmarshal(T, V, C) when
         T =:= {args, call} orelse
         T =:= {args, repair} orelse
         T =:= {response, call} orelse
+        T =:= {response, {repair, success}} orelse
         T =:= {response, {repair, failure}}
 ->
     {bin, EncodedV} = V,
     {erlang:binary_to_term(EncodedV), process_context(T, C)};
 unmarshal({aux_state, undefined} = T, {bin, <<>>}, C) ->
     % initial aux_state
-    {undefined, process_context(T, C)};
-unmarshal({response, {repair, success}} = T, {bin, <<"ok">>}, C) ->
-    % mg repair migration artefact
-    {done, process_context(T, C)}.
+    {undefined, process_context(T, C)}.
 
 -spec get_version(machinery_mg_schema:vt()) -> machinery_mg_schema:version().
 get_version(aux_state) ->

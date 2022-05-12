@@ -7,7 +7,9 @@ erl_crash.dump
 .tags*
 *.sublime-workspace
 .DS_Store
-docker-compose.yml
 /.idea/
 *.beam
-/.edts
+tags
+# make stuff
+/.image.*
+Makefile.env
