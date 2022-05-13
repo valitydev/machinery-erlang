@@ -375,12 +375,6 @@ apply_action(continue, CA) ->
 apply_action(remove, CA) ->
     CA#mg_stateproc_ComplexAction{
         remove = #mg_stateproc_RemoveAction{}
-    };
-apply_action({tag, Tag}, CA) ->
-    CA#mg_stateproc_ComplexAction{
-        tag = #mg_stateproc_TagAction{
-            tag = marshal(tag, Tag)
-        }
     }.
 
 unmarshal(

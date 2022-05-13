@@ -108,7 +108,6 @@
     {set_timer, timer()}
     | {set_timer, timer(), range()}
     | {set_timer, timer(), range(), seconds()}
-    | {tag, tag()}
     | unset_timer
     | continue
     | remove.
