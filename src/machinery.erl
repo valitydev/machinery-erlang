@@ -31,7 +31,7 @@
 -type limit() :: undefined | non_neg_integer().
 -type direction() :: forward | backward.
 -type range() :: {event_cursor(), limit(), direction()}.
--type signal(T) :: {init, args(T)} | {repair, args(T)} | timeout.
+-type signal(T) :: {init, args(T)} | timeout.
 -type machine(E, A) :: #{
     namespace := namespace(),
     id := id(),
@@ -144,7 +144,8 @@ call(NS, Ref, Range, Args, Backend) ->
     {Module, Opts} = machinery_utils:get_backend(Backend),
     machinery_backend:call(Module, NS, Ref, Range, Args, Opts).
 
--spec repair(namespace(), ref(), args(_), backend(_)) -> {ok, response(_)} | {error, notfound | working}.
+-spec repair(namespace(), ref(), args(_), backend(_)) ->
+    {ok, response(_)} | {error, notfound | working | {failed, machinery:error(_)}}.
 repair(NS, Ref, Args, Backend) ->
     repair(NS, Ref, {undefined, undefined, forward}, Args, Backend).
 
@@ -168,13 +169,6 @@ get(NS, Ref, Range, Backend) ->
 -spec dispatch_signal(signal(_), machine(E, A), logic_handler(_), handler_opts(_)) -> result(E, A).
 dispatch_signal({init, Args}, Machine, {Handler, HandlerArgs}, Opts) ->
     Handler:init(Args, Machine, HandlerArgs, Opts);
-dispatch_signal({repair, Args}, Machine, {Handler, HandlerArgs}, Opts) ->
-    case Handler:process_repair(Args, Machine, HandlerArgs, Opts) of
-        {ok, {_Response, Result}} ->
-            Result;
-        {error, Reason} ->
-            erlang:error({repair_failed, Reason})
-    end;
 dispatch_signal(timeout, Machine, {Handler, HandlerArgs}, Opts) ->
     Handler:process_timeout(Machine, HandlerArgs, Opts).
 

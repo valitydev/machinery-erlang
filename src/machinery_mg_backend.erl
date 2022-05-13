@@ -430,9 +430,6 @@ unmarshal({signal, Schema, Context0}, {init, #mg_stateproc_InitSignal{arg = Args
     {{init, Args1}, Context1};
 unmarshal({signal, _Schema, Context}, {timeout, #mg_stateproc_TimeoutSignal{}}) ->
     {timeout, Context};
-unmarshal({signal, Schema, Context0}, {repair, #mg_stateproc_RepairSignal{arg = Args0}}) ->
-    {Args1, Context1} = unmarshal({schema, Schema, {args, repair}, Context0}, Args0),
-    {{repair, Args1}, Context1};
 unmarshal({list, T}, V) when is_list(V) ->
     [unmarshal(T, E) || E <- V];
 unmarshal(T, V) ->

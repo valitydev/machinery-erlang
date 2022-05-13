@@ -1,29 +1,29 @@
-#!/bin/bash
-cat <<EOF
-version: '2.1'
 services:
-
-  ${SERVICE_NAME}:
-    image: ${BUILD_IMAGE}
+  testrunner:
+    image: $DEV_IMAGE_TAG
+    build:
+      dockerfile: Dockerfile.dev
+      context: .
+      args:
+        OTP_VERSION: $OTP_VERSION
+        THRIFT_VERSION: $THRIFT_VERSION
     volumes:
       - .:$PWD
-      - $HOME/.cache:/home/$UNAME/.cache
-    working_dir: $PWD
-    command: /sbin/init
+    hostname: $SERVICE_NAME
     depends_on:
       machinegun:
         condition: service_healthy
+    working_dir: $PWD
+    command: /sbin/init
 
   machinegun:
-    image: dr2.rbkmoney.com/rbkmoney/machinegun:0da2ffc23221e1e3f8557b03d48d11d2dd18fac0
+    image: ghcr.io/valitydev/machinegun:sha-7f0a21a
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
       - ./test/machinegun/cookie:/opt/machinegun/etc/cookie
     healthcheck:
-      test: "curl http://localhost:8022/"
+      test: "/opt/machinegun/bin/machinegun ping"
       interval: 5s
       timeout: 1s
       retries: 20
-
-EOF

@@ -97,7 +97,7 @@ simple_repair_test(C) ->
     ID = unique(),
     ?assertEqual(ok, start(ID, init_numbers, C)),
     ?assertError({failed, general, ID}, call(ID, fail, C)),
-    ?assertEqual({ok, <<"ok">>}, repair(ID, simple, C)),
+    ?assertEqual({ok, done}, repair(ID, simple, C)),
     ?assertEqual({ok, lists:seq(1, 100)}, call(ID, get_events, C)).
 
 -spec complex_repair_test(config()) -> test_return().
@@ -105,7 +105,7 @@ complex_repair_test(C) ->
     ID = unique(),
     ?assertEqual(ok, start(ID, init_numbers, C)),
     ?assertError({failed, general, ID}, call(ID, fail, C)),
-    ?assertEqual({ok, <<"ok">>}, repair(ID, {add_events, [repair_event]}, C)),
+    ?assertEqual({ok, done}, repair(ID, {add_events, [repair_event]}, C)),
     ?assertEqual({ok, lists:seq(1, 100) ++ [repair_event]}, call(ID, get_events, C)).
 
 -spec ranged_repair_test(config()) -> test_return().
@@ -113,7 +113,7 @@ ranged_repair_test(C) ->
     ID = unique(),
     ?assertEqual(ok, start(ID, init_numbers, C)),
     ?assertError({failed, general, ID}, call(ID, fail, C)),
-    ?assertEqual({ok, <<"ok">>}, repair(ID, count_events, {20, 10, forward}, C)),
+    ?assertEqual({ok, done}, repair(ID, count_events, {20, 10, forward}, C)),
     ?assertEqual({ok, lists:seq(1, 100) ++ [{count_events, 10}]}, call(ID, get_events, C)).
 
 -spec notfound_repair_test(config()) -> test_return().
@@ -124,9 +124,10 @@ notfound_repair_test(C) ->
 -spec failed_repair_test(config()) -> test_return().
 failed_repair_test(C) ->
     ID = unique(),
+    Reason = fail,
     ?assertEqual(ok, start(ID, init_numbers, C)),
     ?assertError({failed, general, ID}, call(ID, fail, C)),
-    ?assertError({failed, general, ID}, repair(ID, fail, C)),
+    ?assertEqual({error, {failed, {Reason, #{machine_ns => general, machine_ref => ID}}}}, repair(ID, Reason, C)),
     ?assertError({failed, general, ID}, call(ID, get_events, C)).
 
 -spec unexpected_failed_repair_test(config()) -> test_return().
