@@ -7,6 +7,7 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 -type namespace() :: machinery:namespace().
+-type id() :: machinery:id().
 -type range() :: machinery:range().
 -type logic_handler(T) :: machinery:logic_handler(T).
 
