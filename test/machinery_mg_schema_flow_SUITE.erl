@@ -161,7 +161,7 @@ get_version(event) ->
 -spec process_context(machinery_mg_schema:t(), machinery_mg_schema:context()) ->
     machinery_mg_schema:context() | no_return().
 process_context(T, C) ->
-    ?assertMatch(#{machine_ref := _, machine_ns := general}, C),
+    ?assertMatch(#{machine_id := _, machine_ns := general}, C),
     do_process_context(T, C).
 
 -spec do_process_context(machinery_mg_schema:t(), machinery_mg_schema:context()) ->
@@ -188,11 +188,11 @@ do_process_context({aux_state, _}, C) ->
 start(ID, Args, C) ->
     machinery:start(namespace(), ID, Args, get_backend(C)).
 
-call(Ref, Args, C) ->
-    machinery:call(namespace(), Ref, Args, get_backend(C)).
+call(ID, Args, C) ->
+    machinery:call(namespace(), ID, Args, get_backend(C)).
 
-repair(Ref, Args, Range, C) ->
-    machinery:repair(namespace(), Ref, Range, Args, get_backend(C)).
+repair(ID, Args, Range, C) ->
+    machinery:repair(namespace(), ID, Range, Args, get_backend(C)).
 
 namespace() ->
     general.

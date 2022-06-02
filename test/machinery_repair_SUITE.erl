@@ -127,7 +127,7 @@ failed_repair_test(C) ->
     Reason = fail,
     ?assertEqual(ok, start(ID, init_numbers, C)),
     ?assertError({failed, general, ID}, call(ID, fail, C)),
-    ?assertEqual({error, {failed, {Reason, #{machine_ns => general, machine_ref => ID}}}}, repair(ID, Reason, C)),
+    ?assertEqual({error, {failed, {Reason, #{machine_ns => general, machine_id => ID}}}}, repair(ID, Reason, C)),
     ?assertError({failed, general, ID}, call(ID, get_events, C)).
 
 -spec unexpected_failed_repair_test(config()) -> test_return().
@@ -194,14 +194,14 @@ process_repair(unexpected_fail, _Machine, _, _Opts) ->
 start(ID, Args, C) ->
     machinery:start(namespace(), ID, Args, get_backend(C)).
 
-call(Ref, Args, C) ->
-    machinery:call(namespace(), Ref, Args, get_backend(C)).
+call(ID, Args, C) ->
+    machinery:call(namespace(), ID, Args, get_backend(C)).
 
-repair(Ref, Args, C) ->
-    machinery:repair(namespace(), Ref, Args, get_backend(C)).
+repair(ID, Args, C) ->
+    machinery:repair(namespace(), ID, Args, get_backend(C)).
 
-repair(Ref, Args, Range, C) ->
-    machinery:repair(namespace(), Ref, Range, Args, get_backend(C)).
+repair(ID, Args, Range, C) ->
+    machinery:repair(namespace(), ID, Range, Args, get_backend(C)).
 
 namespace() ->
     general.

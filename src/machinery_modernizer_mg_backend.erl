@@ -7,7 +7,6 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 -type namespace() :: machinery:namespace().
--type ref() :: machinery:ref().
 -type range() :: machinery:range().
 -type logic_handler(T) :: machinery:logic_handler(T).
 
@@ -94,10 +93,10 @@ new(WoodyCtx, Opts = #{client := _, schema := _}) ->
 
 %% Machinery backend
 
--spec modernize(namespace(), ref(), range(), backend_opts()) -> ok | {error, notfound}.
-modernize(NS, Ref, Range, Opts) ->
+-spec modernize(namespace(), id(), range(), backend_opts()) -> ok | {error, notfound}.
+modernize(NS, Id, Range, Opts) ->
     Client = get_client(Opts),
-    Descriptor = {NS, Ref, Range},
+    Descriptor = {NS, Id, Range},
     case machinery_mg_client:modernize(marshal(descriptor, Descriptor), Client) of
         {ok, ok} ->
             ok;
@@ -139,10 +138,10 @@ marshal_event_content(Schema, Version, Context0, _Event = #{data := EventData0})
 get_client(#{client := Client, woody_ctx := WoodyCtx}) ->
     machinery_mg_client:new(Client, WoodyCtx).
 
-build_schema_context(NS, Ref) ->
+build_schema_context(NS, Id) ->
     #{
         machine_ns => NS,
-        machine_ref => Ref
+        machine_id => Id
     }.
 
 %% Marshalling

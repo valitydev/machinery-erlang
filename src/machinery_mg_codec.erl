@@ -24,16 +24,10 @@ marshal(event_id, V) ->
     marshal(integer, V);
 marshal(namespace, V) ->
     marshal(atom, V);
-marshal(tag, V) ->
-    marshal(string, V);
-marshal(ref, V) when is_binary(V) ->
-    {id, marshal(id, V)};
-marshal(ref, {tag, V}) ->
-    {tag, marshal(tag, V)};
-marshal(descriptor, {NS, Ref, Range}) ->
+marshal(descriptor, {NS, ID, Range}) ->
     #mg_stateproc_MachineDescriptor{
         'ns' = marshal(namespace, NS),
-        'ref' = marshal(ref, Ref),
+        'ref' = {id, marshal(id, ID)},
         'range' = marshal(range, Range)
     };
 marshal(range, {Cursor, Limit, Direction}) ->
@@ -73,8 +67,6 @@ unmarshal(event_id, V) ->
     unmarshal(integer, V);
 unmarshal(namespace, V) ->
     unmarshal(atom, V);
-unmarshal(tag, V) ->
-    unmarshal(string, V);
 %%
 %% No unmarshalling for the decriptor required by the protocol so far.
 %%

@@ -13,7 +13,6 @@
 
 -type namespace() :: machinery:namespace().
 -type id() :: machinery:id().
--type ref() :: machinery:ref().
 -type range() :: machinery:range().
 -type args() :: machinery:args(_).
 -type backend_opts() :: machinery:backend_opts(_).
@@ -35,16 +34,16 @@
 start(Backend, Namespace, Id, Args, Opts) ->
     Backend:start(Namespace, Id, Args, Opts).
 
--spec call(backend(), namespace(), ref(), range(), args(), backend_opts()) ->
+-spec call(backend(), namespace(), id(), range(), args(), backend_opts()) ->
     {ok, machinery:response(_)} | {error, notfound}.
-call(Backend, Namespace, Ref, Range, Args, Opts) ->
-    Backend:call(Namespace, Ref, Range, Args, Opts).
+call(Backend, Namespace, Id, Range, Args, Opts) ->
+    Backend:call(Namespace, Id, Range, Args, Opts).
 
--spec repair(backend(), namespace(), ref(), range(), args(), backend_opts()) ->
+-spec repair(backend(), namespace(), id(), range(), args(), backend_opts()) ->
     {ok, machinery:response(_)} | {error, {failed, machinery:error(_)} | notfound | working}.
-repair(Backend, Namespace, Ref, Range, Args, Opts) ->
-    Backend:repair(Namespace, Ref, Range, Args, Opts).
+repair(Backend, Namespace, Id, Range, Args, Opts) ->
+    Backend:repair(Namespace, Id, Range, Args, Opts).
 
--spec get(backend(), namespace(), ref(), range(), backend_opts()) -> {ok, machinery:machine(_, _)} | {error, notfound}.
-get(Backend, Namespace, Ref, Range, Opts) ->
-    Backend:get(Namespace, Ref, Range, Opts).
+-spec get(backend(), namespace(), id(), range(), backend_opts()) -> {ok, machinery:machine(_, _)} | {error, notfound}.
+get(Backend, Namespace, Id, Range, Opts) ->
+    Backend:get(Namespace, Id, Range, Opts).

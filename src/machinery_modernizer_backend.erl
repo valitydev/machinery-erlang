@@ -11,7 +11,6 @@
 
 -type namespace() :: machinery:namespace().
 -type id() :: machinery:id().
--type ref() :: machinery:ref().
 -type range() :: machinery:range().
 -type backend_opts() :: machinery:backend_opts(_).
 
@@ -21,6 +20,6 @@
 
 -type backend() :: module().
 
--spec modernize(backend(), namespace(), ref(), range(), backend_opts()) -> ok | {error, notfound}.
-modernize(Backend, Namespace, Ref, Range, Opts) ->
-    Backend:modernize(Namespace, Ref, Range, Opts).
+-spec modernize(backend(), namespace(), id(), range(), backend_opts()) -> ok | {error, notfound}.
+modernize(Backend, Namespace, Id, Range, Opts) ->
+    Backend:modernize(Namespace, Id, Range, Opts).

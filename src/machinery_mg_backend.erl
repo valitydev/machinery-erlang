@@ -10,7 +10,6 @@
 -include_lib("mg_proto/include/mg_proto_state_processing_thrift.hrl").
 
 -type namespace() :: machinery:namespace().
--type ref() :: machinery:ref().
 -type id() :: machinery:id().
 -type range() :: machinery:range().
 -type args(T) :: machinery:args(T).
@@ -125,12 +124,12 @@ start(NS, ID, Args, Opts) ->
             error({failed, NS, ID})
     end.
 
--spec call(namespace(), ref(), range(), args(_), backend_opts()) -> {ok, response(_)} | {error, notfound}.
-call(NS, Ref, Range, Args, Opts) ->
+-spec call(namespace(), id(), range(), args(_), backend_opts()) -> {ok, response(_)} | {error, notfound}.
+call(NS, Id, Range, Args, Opts) ->
     Client = get_client(Opts),
     Schema = get_schema(Opts),
-    SContext0 = build_schema_context(NS, Ref),
-    Descriptor = {NS, Ref, Range},
+    SContext0 = build_schema_context(NS, Id),
+    Descriptor = {NS, Id, Range},
     {CallArgs, SContext1} = marshal({schema, Schema, {args, call}, SContext0}, Args),
     case machinery_mg_client:call(marshal(descriptor, Descriptor), CallArgs, Client) of
         {ok, Response0} ->
@@ -141,16 +140,16 @@ call(NS, Ref, Range, Args, Opts) ->
         {exception, #mg_stateproc_NamespaceNotFound{}} ->
             error({namespace_not_found, NS});
         {exception, #mg_stateproc_MachineFailed{}} ->
-            error({failed, NS, Ref})
+            error({failed, NS, Id})
     end.
 
--spec repair(namespace(), ref(), range(), args(_), backend_opts()) ->
+-spec repair(namespace(), id(), range(), args(_), backend_opts()) ->
     {ok, response(_)} | {error, {failed, error(_)} | notfound | working}.
-repair(NS, Ref, Range, Args, Opts) ->
+repair(NS, Id, Range, Args, Opts) ->
     Client = get_client(Opts),
     Schema = get_schema(Opts),
-    SContext0 = build_schema_context(NS, Ref),
-    Descriptor = {NS, Ref, Range},
+    SContext0 = build_schema_context(NS, Id),
+    Descriptor = {NS, Id, Range},
     {RepairArgs, SContext1} = marshal({schema, Schema, {args, repair}, SContext0}, Args),
     case machinery_mg_client:repair(marshal(descriptor, Descriptor), RepairArgs, Client) of
         {ok, Response0} ->
@@ -165,14 +164,14 @@ repair(NS, Ref, Range, Args, Opts) ->
         {exception, #mg_stateproc_NamespaceNotFound{}} ->
             error({namespace_not_found, NS});
         {exception, #mg_stateproc_MachineFailed{}} ->
-            error({failed, NS, Ref})
+            error({failed, NS, Id})
     end.
 
--spec get(namespace(), ref(), range(), backend_opts()) -> {ok, machine(_, _)} | {error, notfound}.
-get(NS, Ref, Range, Opts) ->
+-spec get(namespace(), id(), range(), backend_opts()) -> {ok, machine(_, _)} | {error, notfound}.
+get(NS, Id, Range, Opts) ->
     Client = get_client(Opts),
     Schema = get_schema(Opts),
-    Descriptor = {NS, Ref, Range},
+    Descriptor = {NS, Id, Range},
     case machinery_mg_client:get_machine(marshal(descriptor, Descriptor), Client) of
         {ok, Machine0} ->
             {Machine1, _Context} = unmarshal({machine, Schema}, Machine0),
@@ -271,11 +270,11 @@ set_aux_state(undefined, ReceivedState) ->
 set_aux_state(NewState, _) ->
     NewState.
 
--spec build_schema_context(namespace(), ref()) -> machinery_mg_schema:context().
-build_schema_context(NS, Ref) ->
+-spec build_schema_context(namespace(), id()) -> machinery_mg_schema:context().
+build_schema_context(NS, Id) ->
     #{
         machine_ns => NS,
-        machine_ref => Ref
+        machine_id => Id
     }.
 
 %% Marshalling
