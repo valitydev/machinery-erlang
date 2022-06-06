@@ -80,17 +80,17 @@ tag_success(C) ->
     Tag = genlib:unique(),
     ID = pid_to_binary(self()),
     Opts = #{woody_ctx => get_woody_ctx(C)},
-    ok = machinery_machine_unique_tag_mg_example:tag(payproc, Tag, ID, Opts),
-    {ok, ID} = machinery_machine_unique_tag_mg_example:get(payproc, Tag, Opts).
+    ok = machinery_machine_unique_tag_mg_example:tag(example, Tag, ID, Opts),
+    {ok, ID} = machinery_machine_unique_tag_mg_example:get(example, Tag, Opts).
 
 -spec tag_twice_success(config()) -> test_return().
 tag_twice_success(C) ->
     Tag = genlib:unique(),
     ID = pid_to_binary(self()),
     Opts = #{woody_ctx => get_woody_ctx(C)},
-    ok = machinery_machine_unique_tag_mg_example:tag(payproc, Tag, ID, Opts),
-    ok = machinery_machine_unique_tag_mg_example:tag(payproc, Tag, ID, Opts),
-    {ok, ID} = machinery_machine_unique_tag_mg_example:get(payproc, Tag, Opts).
+    ok = machinery_machine_unique_tag_mg_example:tag(example, Tag, ID, Opts),
+    ok = machinery_machine_unique_tag_mg_example:tag(example, Tag, ID, Opts),
+    {ok, ID} = machinery_machine_unique_tag_mg_example:get(example, Tag, Opts).
 
 -spec single_tag_set_only(config()) -> test_return().
 single_tag_set_only(C) ->
@@ -99,7 +99,7 @@ single_tag_set_only(C) ->
     IDs = [integer_to_binary(E) || E <- lists:seq(1, 42)],
     Rs = genlib_pmap:map(
         fun(ID) ->
-            {ID, machinery_machine_unique_tag_mg_example:tag(payproc, Tag, ID, Opts)}
+            {ID, machinery_machine_unique_tag_mg_example:tag(example, Tag, ID, Opts)}
         end,
         IDs
     ),
@@ -112,9 +112,9 @@ untag_success(C) ->
     Tag = genlib:unique(),
     ID = pid_to_binary(self()),
     Opts = #{woody_ctx => get_woody_ctx(C)},
-    ok = machinery_machine_unique_tag_mg_example:tag(payproc, Tag, ID, Opts),
-    ok = machinery_machine_unique_tag_mg_example:untag(payproc, Tag, ID, Opts),
-    {error, unset} = machinery_machine_unique_tag_mg_example:get(payproc, Tag, Opts).
+    ok = machinery_machine_unique_tag_mg_example:tag(example, Tag, ID, Opts),
+    ok = machinery_machine_unique_tag_mg_example:untag(example, Tag, ID, Opts),
+    {error, unset} = machinery_machine_unique_tag_mg_example:get(example, Tag, Opts).
 
 -spec conflict_untag_failure(config()) -> test_return().
 conflict_untag_failure(C) ->
@@ -122,32 +122,32 @@ conflict_untag_failure(C) ->
     ID1 = pid_to_binary(self()),
     ID2 = pid_to_binary(cfg(suite_sup, C)),
     Opts = #{woody_ctx => get_woody_ctx(C)},
-    ok = machinery_machine_unique_tag_mg_example:tag(payproc, Tag, ID1, Opts),
-    {error, {set, ID1}} = machinery_machine_unique_tag_mg_example:untag(payproc, Tag, ID2, Opts),
-    ok = machinery_machine_unique_tag_mg_example:untag(payproc, Tag, ID1, Opts),
-    ok = machinery_machine_unique_tag_mg_example:untag(payproc, Tag, ID2, Opts).
+    ok = machinery_machine_unique_tag_mg_example:tag(example, Tag, ID1, Opts),
+    {error, {set, ID1}} = machinery_machine_unique_tag_mg_example:untag(example, Tag, ID2, Opts),
+    ok = machinery_machine_unique_tag_mg_example:untag(example, Tag, ID1, Opts),
+    ok = machinery_machine_unique_tag_mg_example:untag(example, Tag, ID2, Opts).
 
 -spec reset_tag_success(config()) -> test_return().
 reset_tag_success(C) ->
     Tag = genlib:unique(),
     ID = pid_to_binary(self()),
     Opts = #{woody_ctx => get_woody_ctx(C)},
-    ok = machinery_machine_unique_tag_mg_example:tag(payproc, Tag, ID, Opts),
-    ok = machinery_machine_unique_tag_mg_example:untag(payproc, Tag, ID, Opts),
-    ok = machinery_machine_unique_tag_mg_example:untag(payproc, Tag, ID, Opts),
-    ok = machinery_machine_unique_tag_mg_example:tag(payproc, Tag, ID, Opts),
-    {ok, ID} = machinery_machine_unique_tag_mg_example:get(payproc, Tag, Opts).
+    ok = machinery_machine_unique_tag_mg_example:tag(example, Tag, ID, Opts),
+    ok = machinery_machine_unique_tag_mg_example:untag(example, Tag, ID, Opts),
+    ok = machinery_machine_unique_tag_mg_example:untag(example, Tag, ID, Opts),
+    ok = machinery_machine_unique_tag_mg_example:tag(example, Tag, ID, Opts),
+    {ok, ID} = machinery_machine_unique_tag_mg_example:get(example, Tag, Opts).
 
 -spec tag_unset_timely(config()) -> test_return().
 tag_unset_timely(C) ->
     Tag = genlib:unique(),
     ID = pid_to_binary(self()),
     Opts = #{woody_ctx => get_woody_ctx(C)},
-    ok = machinery_machine_unique_tag_mg_example:tag_until(payproc, Tag, ID, {timeout, 1}, Opts),
-    {ok, ID} = machinery_machine_unique_tag_mg_example:get(payproc, Tag, Opts),
+    ok = machinery_machine_unique_tag_mg_example:tag_until(example, Tag, ID, {timeout, 1}, Opts),
+    {ok, ID} = machinery_machine_unique_tag_mg_example:get(example, Tag, Opts),
     % twice as much as needed
     ok = timer:sleep(2 * 1000),
-    {error, unset} = machinery_machine_unique_tag_mg_example:get(payproc, Tag, Opts).
+    {error, unset} = machinery_machine_unique_tag_mg_example:get(example, Tag, Opts).
 
 %%
 

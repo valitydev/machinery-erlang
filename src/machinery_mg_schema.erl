@@ -27,7 +27,7 @@
 -type version() :: undefined | integer().
 
 -type context() :: #{
-    machine_ref := machinery:ref(),
+    machine_id := machinery:id(),
     machine_ns := machinery:namespace(),
     created_at => machinery:timestamp(),
     atom() => term()

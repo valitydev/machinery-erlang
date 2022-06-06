@@ -7,7 +7,7 @@
 
 % API
 -type namespace() :: machinery:namespace().
--type ref() :: machinery:ref().
+-type id() :: machinery:id().
 -type range() :: machinery:range().
 -type backend() :: machinery:backend(_).
 
@@ -16,11 +16,11 @@
 
 %% API
 
--spec modernize(namespace(), ref(), backend()) -> ok | {error, notfound}.
-modernize(NS, Ref, Backend) ->
-    modernize(NS, Ref, {undefined, undefined, forward}, Backend).
+-spec modernize(namespace(), id(), backend()) -> ok | {error, notfound}.
+modernize(NS, Id, Backend) ->
+    modernize(NS, Id, {undefined, undefined, forward}, Backend).
 
--spec modernize(namespace(), ref(), range(), backend()) -> ok | {error, notfound}.
-modernize(NS, Ref, Range, Backend) ->
+-spec modernize(namespace(), id(), range(), backend()) -> ok | {error, notfound}.
+modernize(NS, Id, Range, Backend) ->
     {Module, Opts} = machinery_utils:get_backend(Backend),
-    machinery_modernizer_backend:modernize(Module, NS, Ref, Range, Opts).
+    machinery_modernizer_backend:modernize(Module, NS, Id, Range, Opts).

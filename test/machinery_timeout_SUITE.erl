@@ -203,11 +203,11 @@ process_repair(_Args, _Machine, _, _Opts) ->
 start(ID, Args, C) ->
     machinery:start(namespace(), ID, Args, get_backend(C)).
 
-call(Ref, Args, C) ->
-    machinery:call(namespace(), Ref, Args, get_backend(C)).
+call(ID, Args, C) ->
+    machinery:call(namespace(), ID, Args, get_backend(C)).
 
-get(Ref, C) ->
-    machinery:get(namespace(), Ref, get_backend(C)).
+get(ID, C) ->
+    machinery:get(namespace(), ID, get_backend(C)).
 
 namespace() ->
     general.
