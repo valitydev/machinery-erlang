@@ -17,7 +17,7 @@ services:
     command: /sbin/init
 
   machinegun:
-    image: ghcr.io/valitydev/machinegun:sha-7f0a21a
+    image: ghcr.io/valitydev/machinegun:sha-00fe6d6
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml

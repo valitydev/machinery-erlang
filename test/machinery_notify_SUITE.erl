@@ -1,4 +1,4 @@
--module(machinery_timeout_SUITE).
+-module(machinery_notify_SUITE).
 
 -behaviour(machinery).
 
@@ -16,12 +16,10 @@
 
 %% Tests
 
--export([start_with_timer_test/1]).
--export([start_with_continue_test/1]).
--export([start_with_ranged_timer_test/1]).
--export([call_with_timer_test/1]).
--export([call_with_continue_test/1]).
--export([call_with_ranged_timer_test/1]).
+-export([ordinary_notify_test/1]).
+-export([unknown_id_notify_test/1]).
+-export([unknown_namespace_notify_test/1]).
+-export([ranged_notify_test/1]).
 
 %% Machinery callbacks
 
@@ -48,13 +46,11 @@ all() ->
 groups() ->
     [
         {machinery_mg_backend, [], [{group, all}]},
-        {all, [parallel], [
-            start_with_timer_test,
-            start_with_continue_test,
-            start_with_ranged_timer_test,
-            call_with_timer_test,
-            call_with_continue_test,
-            call_with_ranged_timer_test
+        {all, [sequence], [
+            ordinary_notify_test,
+            unknown_id_notify_test,
+            unknown_namespace_notify_test,
+            ranged_notify_test
         ]}
     ].
 
@@ -89,56 +85,37 @@ init_per_testcase(TestCaseName, C) ->
 
 %% Tests
 
--spec start_with_timer_test(config()) -> test_return().
-start_with_timer_test(C) ->
+-spec ordinary_notify_test(config()) -> test_return().
+ordinary_notify_test(C) ->
     ID = unique(),
-    ?assertEqual(ok, start(ID, init_timer, C)),
-    timer:sleep(timer:seconds(5)),
-    Expected = lists:seq(1, 10),
-    ?assertMatch({ok, #{aux_state := Expected}}, get(ID, C)).
+    ?assertEqual(ok, start(ID, init_numbers, C)),
+    ?assertEqual(ok, notify(ID, do_something, C)),
+    _ = timer:sleep(1000),
+    {ok, #{history := History}} = get(ID, C),
+    ?assertMatch([{_, _, something} | _], lists:reverse(History)).
 
--spec start_with_continue_test(config()) -> test_return().
-start_with_continue_test(C) ->
+-spec unknown_id_notify_test(config()) -> test_return().
+unknown_id_notify_test(C) ->
     ID = unique(),
-    ?assertEqual(ok, start(ID, init_continue, C)),
-    timer:sleep(timer:seconds(5)),
-    Expected = lists:seq(1, 10),
-    ?assertMatch({ok, #{aux_state := Expected}}, get(ID, C)).
+    ?assertEqual({error, notfound}, notify(ID, do_something, C)).
 
--spec start_with_ranged_timer_test(config()) -> test_return().
-start_with_ranged_timer_test(C) ->
+-spec unknown_namespace_notify_test(config()) -> test_return().
+unknown_namespace_notify_test(C) ->
     ID = unique(),
-    ?assertEqual(ok, start(ID, init_timer_with_range, C)),
-    timer:sleep(timer:seconds(5)),
-    Expected = lists:seq(2, 3),
-    ?assertMatch({ok, #{aux_state := Expected}}, get(ID, C)).
+    ?assertError({namespace_not_found, mmm}, machinery:notify(mmm, ID, do_something, get_backend(C))).
 
--spec call_with_timer_test(config()) -> test_return().
-call_with_timer_test(C) ->
+-spec ranged_notify_test(config()) -> test_return().
+ranged_notify_test(C) ->
     ID = unique(),
-    ?assertEqual(ok, start(ID, nop, C)),
-    ?assertEqual({ok, done}, call(ID, timer, C)),
-    timer:sleep(timer:seconds(5)),
-    Expected = lists:seq(1, 10),
-    ?assertMatch({ok, #{aux_state := Expected}}, get(ID, C)).
-
--spec call_with_continue_test(config()) -> test_return().
-call_with_continue_test(C) ->
-    ID = unique(),
-    ?assertEqual(ok, start(ID, nop, C)),
-    ?assertEqual({ok, done}, call(ID, continue, C)),
-    timer:sleep(timer:seconds(5)),
-    Expected = lists:seq(1, 10),
-    ?assertMatch({ok, #{aux_state := Expected}}, get(ID, C)).
-
--spec call_with_ranged_timer_test(config()) -> test_return().
-call_with_ranged_timer_test(C) ->
-    ID = unique(),
-    ?assertEqual(ok, start(ID, nop, C)),
-    ?assertEqual({ok, done}, call(ID, timer_with_range, C)),
-    timer:sleep(timer:seconds(5)),
-    Expected = lists:seq(2, 3),
-    ?assertMatch({ok, #{aux_state := Expected}}, get(ID, C)).
+    ?assertEqual(ok, start(ID, init_numbers, C)),
+    ?assertEqual(ok, notify(ID, sum_numbers, {10, 9, backward}, C)),
+    _ = timer:sleep(1000),
+    {ok, #{history := History1}} = get(ID, C),
+    ?assertMatch([{_, _, {sum, 45}} | _], lists:reverse(History1)),
+    ?assertEqual(ok, notify(ID, sum_numbers, {2, 9, forward}, C)),
+    _ = timer:sleep(1000),
+    {ok, #{history := History2}} = get(ID, C),
+    ?assertMatch([{_, _, {sum, 63}} | _], lists:reverse(History2)).
 
 %% Machinery handler
 
@@ -147,69 +124,55 @@ call_with_ranged_timer_test(C) ->
 -type machine() :: machinery:machine(event(), aux_st()).
 -type handler_opts() :: machinery:handler_opts(_).
 -type result() :: machinery:result(event(), aux_st()).
--type response() :: machinery:response(_).
 
 -spec init(_Args, machine(), undefined, handler_opts()) -> result().
-init(nop, _Machine, _, _Opts) ->
-    #{};
-init(init_timer, _Machine, _, _Opts) ->
+init(init_numbers, _Machine, _, _Opts) ->
     #{
-        events => lists:seq(1, 10),
-        action => {set_timer, {timeout, 0}}
-    };
-init(init_continue, _Machine, _, _Opts) ->
-    #{
-        events => lists:seq(1, 10),
-        action => continue
-    };
-init(init_timer_with_range, _Machine, _, _Opts) ->
-    #{
-        events => lists:seq(1, 10),
-        action => {set_timer, {deadline, {{{1990, 01, 01}, {0, 0, 0}}, 0}}, {1, 2, forward}, 15}
+        events => lists:seq(1, 100)
     }.
 
--spec process_timeout(machine(), undefined, handler_opts()) -> result().
-process_timeout(#{history := History}, _, _Opts) ->
-    Bodies = lists:map(fun({_ID, _CreatedAt, Body}) -> Body end, History),
-    #{
-        events => [timer_fired],
-        % why not
-        action => unset_timer,
-        aux_state => Bodies
-    }.
+-spec process_timeout(machine(), undefined, handler_opts()) -> no_return().
+process_timeout(#{}, _, _Opts) ->
+    erlang:error({not_implemented, process_timeout}).
 
--spec process_call(_Args, machine(), undefined, handler_opts()) -> {response(), result()}.
-process_call(timer, _Machine, _, _Opts) ->
-    {done, #{
-        events => lists:seq(1, 10),
-        action => {set_timer, {timeout, 0}}
-    }};
-process_call(continue, _Machine, _, _Opts) ->
-    {done, #{
-        events => lists:seq(1, 10),
-        action => continue
-    }};
-process_call(timer_with_range, _Machine, _, _Opts) ->
-    {done, #{
-        events => lists:seq(1, 10),
-        action => {set_timer, {deadline, {{{1990, 01, 01}, {0, 0, 0}}, 0}}, {1, 2, forward}, 15}
-    }}.
+-spec process_call(_Args, machine(), undefined, handler_opts()) -> no_return().
+process_call(_Args, _Machine, _, _Opts) ->
+    erlang:error({not_implemented, process_call}).
 
 -spec process_repair(_Args, machine(), undefined, handler_opts()) -> no_return().
 process_repair(_Args, _Machine, _, _Opts) ->
     erlang:error({not_implemented, process_repair}).
 
--spec process_notification(_, machine(), undefined, handler_opts()) -> no_return().
-process_notification(_Args, _Machine, _, _Opts) ->
-    erlang:error({not_implemented, process_notification}).
+-spec process_notification(_Args, machine(), undefined, handler_opts()) -> result().
+process_notification(do_something, _Machine, _, _Opts) ->
+    #{
+        events => [something]
+    };
+process_notification(sum_numbers, #{history := History}, _, _Opts) ->
+    EventsSum = lists:foldr(
+        fun
+            ({_, _, Num}, Acc) when is_number(Num) ->
+                Num + Acc;
+            ({_, _, _}, Acc) ->
+                Acc
+        end,
+        0,
+        History
+    ),
+    #{
+        events => [{sum, EventsSum}]
+    }.
 
 %% Helpers
 
 start(ID, Args, C) ->
     machinery:start(namespace(), ID, Args, get_backend(C)).
 
-call(ID, Args, C) ->
-    machinery:call(namespace(), ID, Args, get_backend(C)).
+notify(ID, Args, C) ->
+    machinery:notify(namespace(), ID, Args, get_backend(C)).
+
+notify(ID, Args, Range, C) ->
+    machinery:notify(namespace(), ID, Range, Args, get_backend(C)).
 
 get(ID, C) ->
     machinery:get(namespace(), ID, get_backend(C)).

@@ -27,6 +27,7 @@
 -export([process_timeout/3]).
 -export([process_repair/4]).
 -export([process_call/4]).
+-export([process_notification/4]).
 
 %% Internal types
 
@@ -136,6 +137,10 @@ process_call(_Args, _Machine, _, _Opts) ->
 -spec process_repair(_Args, machine(), undefined, handler_opts()) -> no_return().
 process_repair(_Args, _Machine, _, _Opts) ->
     erlang:error({not_implemented, process_repair}).
+
+-spec process_notification(_, machine(), undefined, handler_opts()) -> no_return().
+process_notification(_Args, _Machine, _, _Opts) ->
+    erlang:error({not_implemented, process_notification}).
 
 %% Helpers
 

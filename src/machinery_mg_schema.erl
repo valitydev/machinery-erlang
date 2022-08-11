@@ -11,7 +11,8 @@
     {args,
         init
         | repair
-        | call}
+        | call
+        | notification}
     | {response,
         call
         | {repair,

@@ -14,6 +14,9 @@ namespaces:
             current_format_version: 1
             handler:
                 url: http://machinery:8022/v1/modernizer
+        notification:
+            capacity: 1000
+            scan_interval: 1m
 
 storage:
     type: memory
