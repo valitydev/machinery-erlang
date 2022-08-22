@@ -125,11 +125,11 @@ process_call({untag, ID}, Machine, _, _Opts) ->
             {{error, IDWas}, #{}}
     end.
 
--spec process_repair(_, machine(), undefined, handler_opts()) -> no_return().
+-spec process_repair(machinery:args(_), machine(), undefined, handler_opts()) -> no_return().
 process_repair(_Args, _Machine, _, _Opts) ->
     erlang:error({not_implemented, repair}).
 
--spec process_notification(_, machine(), undefined, handler_opts()) -> no_return().
+-spec process_notification(machinery:args(_), machine(), undefined, handler_opts()) -> no_return().
 process_notification(_Args, _Machine, _, _Opts) ->
     erlang:error({not_implemented, process_notification}).
 
