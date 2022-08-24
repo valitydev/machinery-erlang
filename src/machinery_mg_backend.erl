@@ -22,8 +22,6 @@
     schema := machinery_mg_schema:schema()
 ).
 
--define(MICROS_PER_SEC, (1000 * 1000)).
-
 %% Server types
 -type backend_config() :: #{
     ?BACKEND_CORE_OPTS
@@ -73,6 +71,7 @@
 %% API
 -export([get_routes/2]).
 -export([get_handler/2]).
+-export([get_handler/1]).
 -export([new/2]).
 
 %% Machinery backend
@@ -95,7 +94,11 @@ get_routes(Handlers, Opts) ->
     machinery_utils:get_woody_routes(Handlers, fun get_handler/2, Opts).
 
 -spec get_handler(handler(_), machinery_utils:route_opts()) -> machinery_utils:woody_handler().
-get_handler({LogicHandler, #{path := Path, backend_config := Config}}, _) ->
+get_handler(Handler, _) ->
+    get_handler(Handler).
+
+-spec get_handler(handler(_)) -> machinery_utils:woody_handler().
+get_handler({LogicHandler, #{path := Path, backend_config := Config}}) ->
     {Path, {
         {mg_proto_state_processing_thrift, 'Processor'},
         {?MODULE, get_backend_handler_opts(LogicHandler, Config)}
@@ -391,8 +394,8 @@ unmarshal(
     Context0 = build_schema_context(NS1, ID1),
     {AuxState1, Context1} = unmarshal({schema, Schema, {aux_state, Version}, Context0}, AuxState),
     Machine = #{
-        ns => ID1,
-        id => NS1,
+        namespace => NS1,
+        id => ID1,
         history => unmarshal({history, Schema, Context1}, History),
         range => unmarshal(range, Range),
         aux_state => AuxState1
