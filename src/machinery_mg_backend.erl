@@ -71,6 +71,7 @@
 %% API
 -export([get_routes/2]).
 -export([get_handler/2]).
+-export([get_handler/1]).
 -export([new/2]).
 
 %% Machinery backend
@@ -93,7 +94,11 @@ get_routes(Handlers, Opts) ->
     machinery_utils:get_woody_routes(Handlers, fun get_handler/2, Opts).
 
 -spec get_handler(handler(_), machinery_utils:route_opts()) -> machinery_utils:woody_handler().
-get_handler({LogicHandler, #{path := Path, backend_config := Config}}, _) ->
+get_handler(Handler, _) ->
+    get_handler(Handler).
+
+-spec get_handler(handler(_)) -> machinery_utils:woody_handler().
+get_handler({LogicHandler, #{path := Path, backend_config := Config}}) ->
     {Path, {
         {mg_proto_state_processing_thrift, 'Processor'},
         {?MODULE, get_backend_handler_opts(LogicHandler, Config)}
