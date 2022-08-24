@@ -14,6 +14,7 @@
 -export([repair/3]).
 -export([get_machine/2]).
 -export([modernize/2]).
+-export([notify/3]).
 
 -type woody_client() :: #{
     url := woody:url(),
@@ -40,6 +41,7 @@ new(WoodyClient = #{url := _, event_handler := _}, WoodyCtx) ->
 -type descriptor() :: mg_proto_state_processing_thrift:'MachineDescriptor'().
 -type call_response() :: mg_proto_state_processing_thrift:'CallResponse'().
 -type repair_response() :: mg_proto_state_processing_thrift:'RepairResponse'().
+-type notify_response() :: mg_proto_state_processing_thrift:'NotifyResponse'().
 -type machine() :: mg_proto_state_processing_thrift:'Machine'().
 -type namespace_not_found() :: mg_proto_state_processing_thrift:'NamespaceNotFound'().
 -type machine_not_found() :: mg_proto_state_processing_thrift:'MachineNotFound'().
@@ -73,6 +75,10 @@ new(WoodyClient = #{url := _, event_handler := _}, WoodyCtx) ->
     namespace_not_found()
     | machine_not_found().
 
+-type notify_errors() ::
+    namespace_not_found()
+    | machine_not_found().
+
 -spec start(namespace(), id(), args(), client()) ->
     {ok, ok}
     | {exception, start_errors()}.
@@ -102,6 +108,12 @@ get_machine(Descriptor, Client) ->
     | {exception, modernize_errors()}.
 modernize(Descriptor, Client) ->
     issue_call('Modernize', [Descriptor], Client).
+
+-spec notify(descriptor(), args(), client()) ->
+    {ok, notify_response()}
+    | {exception, notify_errors()}.
+notify(Descriptor, Args, Client) ->
+    issue_call('Notify', [Descriptor, Args], Client).
 
 %% Internal functions
 

@@ -25,6 +25,7 @@
 -export([process_timeout/3]).
 -export([process_repair/4]).
 -export([process_call/4]).
+-export([process_notification/4]).
 
 %%
 
@@ -124,9 +125,13 @@ process_call({untag, ID}, Machine, _, _Opts) ->
             {{error, IDWas}, #{}}
     end.
 
--spec process_repair({untag, id()}, machine(), undefined, handler_opts()) -> no_return().
+-spec process_repair(machinery:args(_), machine(), undefined, handler_opts()) -> no_return().
 process_repair(_Args, _Machine, _, _Opts) ->
     erlang:error({not_implemented, repair}).
+
+-spec process_notification(machinery:args(_), machine(), undefined, handler_opts()) -> no_return().
+process_notification(_Args, _Machine, _, _Opts) ->
+    erlang:error({not_implemented, process_notification}).
 
 %%
 

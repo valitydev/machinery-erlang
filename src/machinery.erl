@@ -29,7 +29,7 @@
 -type limit() :: undefined | non_neg_integer().
 -type direction() :: forward | backward.
 -type range() :: {event_cursor(), limit(), direction()}.
--type signal(T) :: {init, args(T)} | timeout.
+-type signal(T) :: {init, args(T)} | timeout | {notification, args(T)}.
 -type machine(E, A) :: #{
     namespace := namespace(),
     id := id(),
@@ -82,6 +82,8 @@
 -export([repair/5]).
 -export([get/3]).
 -export([get/4]).
+-export([notify/4]).
+-export([notify/5]).
 
 %% Internal API
 -export([dispatch_signal/4]).
@@ -123,6 +125,8 @@
 
 -callback process_call(args(_), machine(E, A), handler_args(_), handler_opts(_)) -> {response(_), result(E, A)}.
 
+-callback process_notification(args(_), machine(E, A), handler_args(_), handler_opts(_)) -> result(E, A).
+
 %% API
 
 -spec start(namespace(), id(), args(_), backend(_)) -> ok | {error, exists}.
@@ -159,13 +163,24 @@ get(NS, ID, Range, Backend) ->
     {Module, Opts} = machinery_utils:get_backend(Backend),
     machinery_backend:get(Module, NS, ID, Range, Opts).
 
+-spec notify(namespace(), id(), args(_), backend(_)) -> ok | {error, notfound} | no_return().
+notify(NS, ID, Args, Backend) ->
+    notify(NS, ID, {undefined, undefined, forward}, Args, Backend).
+
+-spec notify(namespace(), id(), range(), args(_), backend(_)) -> ok | {error, notfound} | no_return().
+notify(NS, ID, Range, Args, Backend) ->
+    {Module, Opts} = machinery_utils:get_backend(Backend),
+    machinery_backend:notify(Module, NS, ID, Range, Args, Opts).
+
 %% Internal API
 
 -spec dispatch_signal(signal(_), machine(E, A), logic_handler(_), handler_opts(_)) -> result(E, A).
 dispatch_signal({init, Args}, Machine, {Handler, HandlerArgs}, Opts) ->
     Handler:init(Args, Machine, HandlerArgs, Opts);
 dispatch_signal(timeout, Machine, {Handler, HandlerArgs}, Opts) ->
-    Handler:process_timeout(Machine, HandlerArgs, Opts).
+    Handler:process_timeout(Machine, HandlerArgs, Opts);
+dispatch_signal({notification, Args}, Machine, {Handler, HandlerArgs}, Opts) ->
+    Handler:process_notification(Args, Machine, HandlerArgs, Opts).
 
 -spec dispatch_call(args(_), machine(E, A), logic_handler(_), handler_opts(_)) -> {response(_), result(E, A)}.
 dispatch_call(Args, Machine, {Handler, HandlerArgs}, Opts) ->

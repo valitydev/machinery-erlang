@@ -81,6 +81,7 @@
 -export([call/5]).
 -export([repair/5]).
 -export([get/4]).
+-export([notify/5]).
 
 %% Woody handler
 -behaviour(woody_server_thrift_handler).
@@ -179,6 +180,23 @@ get(NS, Id, Range, Opts) ->
         {ok, Machine0} ->
             {Machine1, _Context} = unmarshal({machine, Schema}, Machine0),
             {ok, Machine1};
+        {exception, #mg_stateproc_MachineNotFound{}} ->
+            {error, notfound};
+        {exception, #mg_stateproc_NamespaceNotFound{}} ->
+            error({namespace_not_found, NS})
+    end.
+
+-spec notify(namespace(), id(), range(), args(_), backend_opts()) -> ok | {error, notfound} | no_return().
+notify(NS, Id, Range, Args, Opts) ->
+    Client = get_client(Opts),
+    Schema = get_schema(Opts),
+    SContext0 = build_schema_context(NS, Id),
+    Descriptor = {NS, Id, Range},
+    {NotificationArgs, _SContext1} = marshal({schema, Schema, {args, notification}, SContext0}, Args),
+    case machinery_mg_client:notify(marshal(descriptor, Descriptor), NotificationArgs, Client) of
+        {ok, _Response0} ->
+            %% Response contains the notification id but it's not like we can do anything with that information
+            ok;
         {exception, #mg_stateproc_MachineNotFound{}} ->
             {error, notfound};
         {exception, #mg_stateproc_NamespaceNotFound{}} ->
@@ -424,6 +442,9 @@ unmarshal(
 unmarshal({signal, Schema, Context0}, {init, #mg_stateproc_InitSignal{arg = Args0}}) ->
     {Args1, Context1} = unmarshal({schema, Schema, {args, init}, Context0}, Args0),
     {{init, Args1}, Context1};
+unmarshal({signal, Schema, Context0}, {notification, #mg_stateproc_NotificationSignal{arg = Args0}}) ->
+    {Args1, Context1} = unmarshal({schema, Schema, {args, notification}, Context0}, Args0),
+    {{notification, Args1}, Context1};
 unmarshal({signal, _Schema, Context}, {timeout, #mg_stateproc_TimeoutSignal{}}) ->
     {timeout, Context};
 unmarshal({list, T}, V) when is_list(V) ->
