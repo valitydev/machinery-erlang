@@ -22,8 +22,6 @@
     schema := machinery_mg_schema:schema()
 ).
 
--define(MICROS_PER_SEC, (1000 * 1000)).
-
 %% Server types
 -type backend_config() :: #{
     ?BACKEND_CORE_OPTS
@@ -391,8 +389,8 @@ unmarshal(
     Context0 = build_schema_context(NS1, ID1),
     {AuxState1, Context1} = unmarshal({schema, Schema, {aux_state, Version}, Context0}, AuxState),
     Machine = #{
-        ns => ID1,
-        id => NS1,
+        namespace => NS1,
+        id => ID1,
         history => unmarshal({history, Schema, Context1}, History),
         range => unmarshal(range, Range),
         aux_state => AuxState1
