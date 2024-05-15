@@ -18,8 +18,8 @@
         | {repair,
             success
             | failure}}
-    | {event, Version}
-    | {aux_state, Version}.
+    | {event, version()}
+    | {aux_state, version()}.
 
 -type v(T) ::
     T.

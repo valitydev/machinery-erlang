@@ -82,7 +82,7 @@ config() ->
         schema => machinery_mg_schema_generic,
         url => <<"http://machinegun:8022/v1/automaton">>,
         handler_path => <<"/v1/stateproc">>,
-        event_handler => woody_event_handler_default,
+        event_handler => {woody_event_handler_default, #{}},
         server_opts => #{
             ip => {0, 0, 0, 0},
             port => 8022
