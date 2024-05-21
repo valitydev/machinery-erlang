@@ -241,7 +241,7 @@ backend_mg_routes() ->
     Handler = {?MODULE, BackendConfig},
     machinery_mg_backend:get_routes(
         [Handler],
-        #{event_handler => woody_event_handler_default}
+        #{event_handler => {woody_event_handler_default, #{}}}
     ).
 
 modernizer_mg_routes() ->
@@ -253,7 +253,7 @@ modernizer_mg_routes() ->
     },
     machinery_modernizer_mg_backend:get_routes(
         [ModernizerConfig],
-        #{event_handler => woody_event_handler_default}
+        #{event_handler => {woody_event_handler_default, #{}}}
     ).
 
 -spec get_backend(config()) -> machinery_mg_backend:backend().
@@ -273,7 +273,7 @@ get_backend(machinery_mg_backend, C) ->
         #{
             client => #{
                 url => <<"http://machinegun:8022/v1/automaton">>,
-                event_handler => woody_event_handler_default
+                event_handler => {woody_event_handler_default, #{}}
             },
             schema => ?MODULE
         }
@@ -284,7 +284,7 @@ get_backend(machinery_modernizer_mg_backend, C) ->
         #{
             client => #{
                 url => <<"http://machinegun:8022/v1/automaton">>,
-                event_handler => woody_event_handler_default
+                event_handler => {woody_event_handler_default, #{}}
             },
             schema => ?MODULE
         }

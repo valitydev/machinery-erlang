@@ -54,7 +54,7 @@ expand_modopts(Mod, Opts) ->
 woody_child_spec(Id, Routes, Config) ->
     woody_server:child_spec(Id, Config#{
         %% ev handler for `handlers`, which is `[]`, so this is just to satisfy the spec.
-        event_handler => woody_event_handler_default,
+        event_handler => {woody_event_handler_default, #{}},
         handlers => [],
         additional_routes => Routes
     }).

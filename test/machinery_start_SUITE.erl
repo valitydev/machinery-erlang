@@ -174,7 +174,7 @@ child_spec(machinery_mg_backend, _C) ->
     Handler = {?MODULE, BackendConfig},
     Routes = machinery_mg_backend:get_routes(
         [Handler],
-        #{event_handler => woody_event_handler_default}
+        #{event_handler => {woody_event_handler_default, #{}}}
     ),
     ServerConfig = #{
         ip => {0, 0, 0, 0},
@@ -193,7 +193,7 @@ get_backend(machinery_mg_backend, C) ->
         #{
             client => #{
                 url => <<"http://machinegun:8022/v1/automaton">>,
-                event_handler => woody_event_handler_default
+                event_handler => {woody_event_handler_default, #{}}
             },
             schema => machinery_mg_schema_generic
         }
