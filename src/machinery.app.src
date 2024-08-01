@@ -1,7 +1,5 @@
 {application, machinery, [
-    {description,
-        "Machinegun client/handler lib."
-    },
+    {description, "Machinegun client/handler lib."},
     {vsn, "1"},
     {registered, []},
     {applications, [
@@ -9,6 +7,7 @@
         stdlib,
         genlib,
         cowboy,
+        prometheus,
         woody,
         mg_proto
     ]},

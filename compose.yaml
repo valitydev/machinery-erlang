@@ -13,11 +13,13 @@ services:
     depends_on:
       machinegun:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     working_dir: $PWD
     command: /sbin/init
 
   machinegun:
-    image: ghcr.io/valitydev/machinegun:sha-00fe6d6
+    image: ghcr.io/valitydev/mg2:sha-8bbcd29
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
@@ -27,3 +29,31 @@ services:
       interval: 5s
       timeout: 1s
       retries: 20
+
+  postgres:
+    image: postgres:15-bookworm
+    command: -c 'max_connections=200'
+    environment:
+      POSTGRES_DB: "progressor_db"
+      POSTGRES_USER: "progressor"
+      POSTGRES_PASSWORD: "progressor"
+      PGDATA: "/tmp/postgresql/data/pgdata"
+    volumes:
+      - progressor-data:/tmp/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U progressor -d progressor_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 4G
+
+volumes:
+  progressor-data:
