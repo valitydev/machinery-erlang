@@ -38,7 +38,7 @@ cfg(Key, Config) ->
 -type app_env() :: [{atom(), term()}].
 -type startup_ctx() :: #{atom() => _}.
 
--spec start_apps([app_name()]) -> {[Started :: app_name()], startup_ctx()}.
+-spec start_apps([app_name() | {app_name(), app_env()}]) -> {[Started :: app_name()], startup_ctx()}.
 start_apps(AppNames) ->
     lists:foldl(
         fun(AppName, {SAcc, CtxAcc}) ->
@@ -49,7 +49,9 @@ start_apps(AppNames) ->
         AppNames
     ).
 
--spec start_app(app_name()) -> {[Started :: app_name()], startup_ctx()}.
+-spec start_app(app_name() | {app_name(), app_env()}) -> {[Started :: app_name()], startup_ctx()}.
+start_app({AppName, Env}) ->
+    {start_app_with(AppName, Env), #{}};
 start_app(scoper = AppName) ->
     {
         start_app_with(AppName, [
@@ -61,6 +63,27 @@ start_app(woody = AppName) ->
     {
         start_app_with(AppName, [
             {acceptors_pool_size, 4}
+        ]),
+        #{}
+    };
+start_app(epg_connector = AppName) ->
+    {
+        start_app_with(AppName, [
+            {databases, #{
+                default_db => #{
+                    host => "postgres",
+                    port => 5432,
+                    database => "progressor_db",
+                    username => "progressor",
+                    password => "progressor"
+                }
+            }},
+            {pools, #{
+                default_pool => #{
+                    database => default_db,
+                    size => 10
+                }
+            }}
         ]),
         #{}
     };
