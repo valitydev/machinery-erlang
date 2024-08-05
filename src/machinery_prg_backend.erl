@@ -25,7 +25,9 @@
     namespace := machinery:namespace()
 }.
 
--spec new(woody_context:ctx(), backend_opts()) -> machinery:backend(backend_opts()).
+-type ctx_opts() :: map().
+
+-spec new(woody_context:ctx(), ctx_opts()) -> machinery:backend(ctx_opts()).
 new(WoodyCtx, CtxOpts) ->
     {?MODULE, CtxOpts#{woody_ctx => WoodyCtx}}.
 
@@ -62,21 +64,18 @@ call(NS, ID, _Range, Args, CtxOpts) ->
 repair(NS, ID, _Range, Args, CtxOpts) ->
     %% TODO Add history range support
     case progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
+        {ok, {repair_error, Reason}} ->
+            {error, {failed, unmarshal(content, Reason)}};
         {ok, _Result} = Response ->
             Response;
-        %% TODO Impl API
         {error, <<"namespace not found">>} ->
             erlang:error({namespace_not_found, NS});
-        %% TODO Impl API
-        {error, <<"process failed">>} ->
-            erlang:error({failed, NS, ID});
         {error, <<"process not found">>} ->
             {error, notfound};
         {error, <<"process is running">>} ->
             {error, working};
-        %% TODO Process repair failure reason?
         {error, <<"process is error">>} ->
-            {error, {failed, unknown}}
+            erlang:error({failed, NS, ID})
     end.
 
 -spec get(machinery:namespace(), machinery:id(), machinery:range(), backend_opts()) ->
@@ -85,14 +84,7 @@ get(NS, ID, Range, CtxOpts) ->
     RangeArgs = range_args(Range),
     case progressor:get(make_request(NS, ID, RangeArgs, CtxOpts)) of
         {ok, Process} ->
-            Machine = specify_range(RangeArgs, #{
-                namespace => NS,
-                id => ID,
-                history => unmarshal({list, event}, maps:get(history, Process)),
-                aux_state => unmarshal(aux_state, maps:get(aux_state, Process, undefined))
-            }),
-            {ok, Machine};
-        %% TODO Impl API
+            {ok, unmarshal_process(NS, RangeArgs, Process)};
         {error, <<"namespace not found">>} ->
             erlang:error({namespace_not_found, NS});
         {error, <<"process not found">>} ->
@@ -124,26 +116,37 @@ range_args({EventCursor, Limit, _Direction}) ->
         limit => Limit
     }.
 
+specify_range(RangeArgs, Machine = #{history := History}) ->
+    HistoryLen = erlang:length(History),
+    Offset = maps:get(offset, RangeArgs, 0),
+    Limit0 = maps:get(limit, RangeArgs, HistoryLen),
+    Limit1 = erlang:min(Limit0, HistoryLen),
+    Machine#{range => {Offset, Limit1, forward}}.
+
+make_request(NS, ID, Args, CtxOpts) ->
+    #{
+        ns => NS,
+        id => ID,
+        args => marshal(args, Args),
+        context => marshal(context, CtxOpts)
+    }.
+
 %% Machine's processor callback entrypoint
 
 -type encoded_args() :: binary().
 -type encoded_ctx() :: binary().
 
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
-process({CallType, BinArgs, Process = #{process_id := ID, history := History}}, Opts, BinCtx) ->
+process({CallType, BinArgs, Process}, Opts, BinCtx) ->
     try
-        AuxState = maps:get(aux_state, Process, undefined),
         %% TODO Passthrough history range
-        Machine = specify_range(#{}, #{
-            namespace => maps:get(namespace, Opts),
-            id => ID,
-            history => unmarshal({list, event}, History),
-            aux_state => unmarshal(aux_state, AuxState)
-        }),
+        Machine = unmarshal_process(maps:get(namespace, Opts), #{}, Process),
         CtxOpts = unmarshal(context, BinCtx),
         Handler = machinery_utils:expand_modopts(maps:get(handler, Opts), #{}),
         handle_result(
-            latest_event_id(History),
+            machine_namespace(Machine),
+            machine_id(Machine),
+            latest_event_id(Machine),
             case CallType of
                 init ->
                     Args = unmarshal(args, BinArgs),
@@ -170,21 +173,44 @@ process({CallType, BinArgs, Process = #{process_id := ID, history := History}}, 
             erlang:raise(Class, Reason, Stacktrace)
     end.
 
-latest_event_id([]) ->
+machine_namespace(#{namespace := NS}) ->
+    NS.
+
+machine_id(#{id := ID}) ->
+    ID.
+
+latest_event_id(#{history := []}) ->
     0;
-latest_event_id(ProcessHistory) ->
-    #{event_id := LatestEventID} = lists:last(ProcessHistory),
+latest_event_id(#{history := History}) ->
+    {LatestEventID, _, _} = lists:last(History),
     LatestEventID.
 
-handle_result(_LatestEventID, {error, Reason}) ->
-    %% FIXME or maybe throw?
-    {error, Reason};
-handle_result(LatestEventID, {ok, {Response, Result}}) ->
+handle_result(NS, ID, LatestEventID, {error, Reason}) ->
+    %% _ = LatestEventID,
+    %% {error, marshal(content, {Reason, #{machine_ns => NS, machine_id => ID}})};
+    %% TODO Review '{error, Reason}' clause for it is very special and
+    %% only for repairing issues.
+    %%
+    %% Dirty hack with response. However it breaks contract since this
+    %% process call MUST NOT produce new effects, state or action!
+    PseudoResult = #{},
+    Response = {repair_error, marshal(content, {Reason, #{machine_ns => NS, machine_id => ID}})},
+    {ok, marshal_result(LatestEventID, Response, PseudoResult, #{})};
+handle_result(_NS, _ID, LatestEventID, {ok, {Response, Result}}) ->
     {ok, marshal_result(LatestEventID, Response, Result, #{})};
-handle_result(LatestEventID, {Response, Result}) ->
+handle_result(_NS, _ID, LatestEventID, {Response, Result}) ->
     {ok, marshal_result(LatestEventID, Response, Result, #{})};
-handle_result(LatestEventID, Result) ->
+handle_result(_NS, _ID, LatestEventID, Result) ->
     {ok, marshal_result(LatestEventID, undefined, Result, #{})}.
+
+unmarshal_process(NS, RangeArgs, Process = #{process_id := ID, history := History}) ->
+    AuxState = maps:get(aux_state, Process, undefined),
+    specify_range(RangeArgs, #{
+        namespace => NS,
+        id => ID,
+        history => unmarshal({list, event}, History),
+        aux_state => unmarshal(aux_state, AuxState)
+    }).
 
 marshal_result(LatestEventID, Response, Result, Metadata) ->
     Events = maps:get(events, Result, []),
@@ -247,8 +273,6 @@ marshal(event_bodies, {LatestID, Events}) ->
     );
 marshal(aux_state, V) ->
     marshal(content, V);
-marshal({list, T}, V) when is_list(V) ->
-    lists:map(fun(SV) -> marshal(T, SV) end, V);
 marshal(content, undefined) ->
     undefined;
 marshal(content, V) ->
@@ -277,23 +301,3 @@ unmarshal(content, undefined) ->
 unmarshal(content, V) ->
     %% Go with stupid simple
     erlang:binary_to_term(V).
-
-%%
-
-specify_range(RangeArgs, Machine = #{history := History}) ->
-    HistoryLen = erlang:length(History),
-    Machine#{
-        range => {
-            maps:get(offset, RangeArgs, 0),
-            erlang:min(maps:get(limit, RangeArgs, HistoryLen), HistoryLen),
-            forward
-        }
-    }.
-
-make_request(NS, ID, Args, CtxOpts) ->
-    #{
-        ns => NS,
-        id => ID,
-        args => marshal(args, Args),
-        context => marshal(context, CtxOpts)
-    }.
