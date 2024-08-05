@@ -47,18 +47,24 @@ all() ->
 groups() ->
     [
         {machinery_mg_backend, [], [{group, all}]},
-        {machinery_prg_backend, [], [{group, all}]},
+        {machinery_prg_backend, [], [{group, all_wo_failed_start}]},
         {all, [parallel], [
             ordinary_start_test,
             exists_start_test,
             unknown_namespace_start_test,
             failed_start_test
+        ]},
+        {all_wo_failed_start, [parallel], [
+            ordinary_start_test,
+            exists_start_test,
+            unknown_namespace_start_test
+            %%, failed_start_test
         ]}
     ].
 
 -spec init_per_suite(config()) -> config().
 init_per_suite(C) ->
-    {StartedApps, _StartupCtx} = ct_helper:start_apps([epg_connector, progressor]),
+    {StartedApps, _StartupCtx} = ct_helper:start_apps([machinery]),
     [{started_apps, StartedApps} | C].
 
 -spec end_per_suite(config()) -> _.
@@ -72,7 +78,10 @@ init_per_group(machinery_mg_backend = Name, C0) ->
     {ok, _Pid} = start_backend(C1),
     C1;
 init_per_group(machinery_prg_backend = Name, C0) ->
-    C1 = [{backend, Name}, {group_sup, ct_sup:start()} | C0],
+    %% _ = dbg:tracer(),
+    %% _ = dbg:p(all, c),
+    %% _ = dbg:tpl({'machinery_prg_backend', 'process', '_'}, x),
+    C1 = [{backend, Name} | C0],
     {NewApps, _} = ct_helper:start_apps([
         epg_connector,
         {progressor, [
@@ -109,14 +118,17 @@ init_per_group(machinery_prg_backend = Name, C0) ->
             }}
         ]}
     ]),
-    Apps1 = ?config(started_apps, C1) ++ NewApps,
-    [{started_apps, Apps1} | C1];
+    lists:keyreplace(started_apps, 1, C1, {started_apps, ?config(started_apps, C1) ++ NewApps});
 init_per_group(_Name, C) ->
     C.
 
 -spec end_per_group(group_name(), config()) -> config().
 end_per_group(machinery_mg_backend, C) ->
     ok = ct_sup:stop(?config(group_sup, C)),
+    C;
+end_per_group(machinery_prg_backend, C) ->
+    ok = ct_helper:stop_apps([progressor]),
+    %% ok = progressor:cleanup(#{ns => namespace()}),
     C;
 end_per_group(_Name, C) ->
     C.

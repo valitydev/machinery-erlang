@@ -41,18 +41,28 @@
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        {group, machinery_mg_backend}
+        {group, machinery_mg_backend},
+        {group, machinery_prg_backend}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name() | {group, group_name()}]}].
 groups() ->
     [
         {machinery_mg_backend, [], [{group, all}]},
+        {machinery_prg_backend, [], [{group, all_wo_ranged}]},
         {all, [parallel], [
             ordinary_call_test,
             notfound_call_test,
             unknown_namespace_call_test,
             ranged_call_test,
+            failed_call_test,
+            remove_call_test
+        ]},
+        {all_wo_ranged, [parallel], [
+            ordinary_call_test,
+            notfound_call_test,
+            unknown_namespace_call_test,
+            %% ranged_call_test,
             failed_call_test,
             remove_call_test
         ]}
@@ -73,12 +83,60 @@ init_per_group(machinery_mg_backend = Name, C0) ->
     C1 = [{backend, Name}, {group_sup, ct_sup:start()} | C0],
     {ok, _Pid} = start_backend(C1),
     C1;
+init_per_group(machinery_prg_backend = Name, C0) ->
+    %% _ = dbg:tracer(),
+    %% _ = dbg:p(all, c),
+    %% _ = dbg:tpl({'prg_processor', 'process', '_'}, x),
+    %% _ = dbg:tpl({'machinery', 'dispatch_call', '_'}, x),
+    %% _ = dbg:tpl({'machinery_prg_backend', 'marshal_result', '_'}, x),
+    C1 = [{backend, Name} | C0],
+    {NewApps, _} = ct_helper:start_apps([
+        epg_connector,
+        {progressor, [
+            {call_wait_timeout, 20},
+            {defaults, #{
+                storage => #{
+                    client => prg_pg_backend,
+                    options => #{
+                        pool => default_pool
+                    }
+                },
+                retry_policy => #{
+                    initial_timeout => 5,
+                    backoff_coefficient => 1.0,
+                    %% seconds
+                    max_timeout => 180,
+                    max_attempts => 3,
+                    non_retryable_errors => []
+                },
+                task_scan_timeout => 1,
+                worker_pool_size => 100,
+                process_step_timeout => 30
+            }},
+            {namespaces, #{
+                general => #{
+                    processor => #{
+                        client => machinery_prg_backend,
+                        options => #{
+                            namespace => namespace(),
+                            handler => ?MODULE
+                        }
+                    }
+                }
+            }}
+        ]}
+    ]),
+    lists:keyreplace(started_apps, 1, C1, {started_apps, ?config(started_apps, C1) ++ NewApps});
 init_per_group(_Name, C) ->
     C.
 
 -spec end_per_group(group_name(), config()) -> config().
 end_per_group(machinery_mg_backend, C) ->
     ok = ct_sup:stop(?config(group_sup, C)),
+    C;
+end_per_group(machinery_prg_backend, C) ->
+    ok = ct_helper:stop_apps([progressor]),
+    %% ok = progressor:cleanup(#{ns => namespace()}),
     C;
 end_per_group(_Name, C) ->
     C.
@@ -227,4 +285,6 @@ get_backend(machinery_mg_backend, C) ->
             },
             schema => machinery_mg_schema_generic
         }
-    ).
+    );
+get_backend(machinery_prg_backend, C) ->
+    machinery_prg_backend:new(ct_helper:get_woody_ctx(C), #{}).
