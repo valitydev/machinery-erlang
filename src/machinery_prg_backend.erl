@@ -95,26 +95,43 @@ get(NS, ID, Range, CtxOpts) ->
     ok | {error, notfound} | no_return().
 notify(NS, ID, _Range, Args, CtxOpts) ->
     %% TODO Add history range support
-    case progressor:notify(make_request(NS, ID, Args, CtxOpts)) of
-        {ok, _Response} ->
+    %% FIXME Temporary pass notify as sync call
+    case progressor:call(make_request(NS, ID, {notify, Args}, CtxOpts)) of
+        {ok, _Result} ->
             ok;
         {error, <<"process not found">>} ->
             {error, notfound};
-        %% TODO Impl API
         {error, <<"namespace not found">>} ->
-            erlang:error({namespace_not_found, NS})
+            erlang:error({namespace_not_found, NS});
+        %% NOTE Not a 'notify' error
+        {error, <<"process is error">>} ->
+            ok
     end.
 
 %%
 
+%% After querying resulting list is expected to be sorted with id
+%% values ascending before returning it as events.
 range_args(undefined) ->
-    #{};
-range_args({EventCursor, Limit, _Direction}) ->
-    %% Direction always forward?
-    #{
-        offset => genlib:define(EventCursor, 1) - 1,
+    range_args({undefined, undefined, forward});
+range_args({undefined, Limit, backward}) ->
+    %% TODO Support flag for 'ORDER BY' inversion
+    maps:put(inverse_order, true, range_args({undefined, Limit, forward}));
+range_args({Offset, undefined, backward}) ->
+    genlib_map:compact(#{
+        offset => 0,
+        limit => Offset - 1
+    });
+range_args({After, Limit, backward}) ->
+    genlib_map:compact(#{
+        offset => After - Limit - 1,
         limit => Limit
-    }.
+    });
+range_args({After, Limit, forward}) ->
+    genlib_map:compact(#{
+        offset => genlib:define(After, 0),
+        limit => Limit
+    }).
 
 specify_range(RangeArgs, Machine = #{history := History}) ->
     HistoryLen = erlang:length(History),
@@ -154,12 +171,17 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
                 timeout ->
                     %% FIXME Timeout args are unmarshalable '<<>>'
                     machinery:dispatch_signal(timeout, Machine, Handler, CtxOpts);
+                %% NOTE Not actually implemented on a client but mocked via 'call'
                 notify ->
                     Args = unmarshal(args, BinArgs),
                     machinery:dispatch_signal({notification, Args}, Machine, Handler, CtxOpts);
                 call ->
-                    Args = unmarshal(args, BinArgs),
-                    machinery:dispatch_call(Args, Machine, Handler, CtxOpts);
+                    case unmarshal(args, BinArgs) of
+                        {notify, Args} ->
+                            machinery:dispatch_signal({notification, Args}, Machine, Handler, CtxOpts);
+                        Args ->
+                            machinery:dispatch_call(Args, Machine, Handler, CtxOpts)
+                    end;
                 repair ->
                     Args = unmarshal(args, BinArgs),
                     machinery:dispatch_repair(Args, Machine, Handler, CtxOpts)
@@ -301,3 +323,24 @@ unmarshal(content, undefined) ->
 unmarshal(content, V) ->
     %% Go with stupid simple
     erlang:binary_to_term(V).
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+-type testgen() :: {_ID, fun(() -> _)}.
+-spec test() -> _.
+
+-spec range_args_test_() -> [testgen()].
+range_args_test_() ->
+    [
+        ?_assertEqual(#{offset => 0}, range_args(undefined)),
+        ?_assertEqual(#{offset => 0}, range_args({undefined, undefined, forward})),
+        ?_assertEqual(#{offset => 42}, range_args({42, undefined, forward})),
+        ?_assertEqual(#{offset => 0, limit => 10}, range_args({undefined, 10, forward})),
+        ?_assertEqual(#{offset => 42, limit => 10}, range_args({42, 10, forward})),
+        ?_assertEqual(#{offset => 0, limit => 10, inverse_order => true}, range_args({undefined, 10, backward})),
+        ?_assertEqual(#{offset => 0, limit => 41}, range_args({42, undefined, backward})),
+        ?_assertEqual(#{offset => 31, limit => 10}, range_args({42, 10, backward}))
+    ].
+
+-endif.
