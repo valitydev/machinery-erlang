@@ -92,7 +92,8 @@ get(NS, ID, Range, CtxOpts) ->
     RangeArgs = range_args(Range),
     case progressor:get(make_request(NS, ID, RangeArgs, CtxOpts)) of
         {ok, Process} ->
-            {ok, unmarshal_process(NS, RangeArgs, Process)};
+            {Machine, _SContext} = unmarshal_process(NS, RangeArgs, Process, get_schema(CtxOpts)),
+            {ok, Machine};
         {error, <<"namespace not found">>} ->
             erlang:error({namespace_not_found, NS});
         {error, <<"process not found">>} ->
@@ -101,18 +102,17 @@ get(NS, ID, Range, CtxOpts) ->
 
 -spec notify(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
     ok | {error, notfound} | no_return().
-notify(NS, ID, _Range, Args, CtxOpts) ->
+notify(NS, ID, Range, Args, CtxOpts) ->
     %% TODO Add history range support
     %% FIXME Temporary pass notify as sync call
-    case progressor:call(make_request(NS, ID, {notify, Args}, CtxOpts)) of
-        {ok, _Result} ->
-            ok;
-        {error, <<"process not found">>} ->
-            {error, notfound};
-        {error, <<"namespace not found">>} ->
-            erlang:error({namespace_not_found, NS});
-        %% NOTE Not a 'notify' error
-        {error, <<"process is error">>} ->
+    try
+        case call(NS, ID, Range, {notify, Args}, CtxOpts) of
+            {ok, _} -> ok;
+            R -> R
+        end
+    catch
+        error:{failed, _NS, _ID} ->
+            %% NOTE Not a 'notify' error
             ok
     end.
 
@@ -142,8 +142,10 @@ specify_range(RangeArgs, Machine = #{history := History}) ->
     Limit1 = erlang:min(Limit0, HistoryLen),
     Machine#{range => {Offset, Limit1, forward}}.
 
+get_schema(#{schema := Schema}) ->
+    Schema.
+
 make_request(NS, ID, Args, CtxOpts) ->
-    _Schema = maps:get(schema, CtxOpts),
     #{
         ns => NS,
         id => ID,
@@ -151,23 +153,28 @@ make_request(NS, ID, Args, CtxOpts) ->
         context => marshal(context, maps:with([woody_ctx], CtxOpts))
     }.
 
+build_schema_context(NS, ID) ->
+    #{
+        machine_ns => NS,
+        machine_id => ID
+    }.
+
 %% Machine's processor callback entrypoint
 
 -type encoded_args() :: binary().
 -type encoded_ctx() :: binary().
 
+-define(DEFAULT_EVENT_VERSION, 1).
+
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
     try
+        Schema = get_schema(Opts),
         %% TODO Passthrough history range
-        Machine = unmarshal_process(maps:get(namespace, Opts), #{}, Process),
+        {Machine, SContext} = unmarshal_process(maps:get(namespace, Opts), #{}, Process, Schema),
         ProcessCtx = unmarshal(context, BinCtx),
         Handler = machinery_utils:expand_modopts(maps:get(handler, Opts), #{}),
-        _Schema = maps:get(schema, Opts),
-        handle_result(
-            machine_namespace(Machine),
-            machine_id(Machine),
-            latest_event_id(Machine),
+        Result =
             case CallType of
                 init ->
                     Args = unmarshal(args, BinArgs),
@@ -189,8 +196,8 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
                 repair ->
                     Args = unmarshal(args, BinArgs),
                     machinery:dispatch_repair(Args, Machine, Handler, ProcessCtx)
-            end
-        )
+            end,
+        handle_result(Schema, SContext, ?DEFAULT_EVENT_VERSION, latest_event_id(Machine), Result)
     catch
         Class:Reason:Stacktrace ->
             %% TODO Fail machine/process?
@@ -199,19 +206,13 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
             erlang:raise(Class, Reason, Stacktrace)
     end.
 
-machine_namespace(#{namespace := NS}) ->
-    NS.
-
-machine_id(#{id := ID}) ->
-    ID.
-
 latest_event_id(#{history := []}) ->
     0;
 latest_event_id(#{history := History}) ->
     {LatestEventID, _, _} = lists:last(History),
     LatestEventID.
 
-handle_result(NS, ID, LatestEventID, {error, Reason}) ->
+handle_result(Schema, SContext, EventVersion, LatestEventID, {error, Reason}) ->
     %% _ = LatestEventID,
     %% {error, marshal(content, {Reason, #{machine_ns => NS, machine_id => ID}})};
     %% TODO Review '{error, Reason}' clause for it is very special and
@@ -220,32 +221,37 @@ handle_result(NS, ID, LatestEventID, {error, Reason}) ->
     %% Dirty hack with response. However it breaks contract since this
     %% process call MUST NOT produce new effects, state or action!
     PseudoResult = #{},
-    Response = {repair_error, marshal(content, {Reason, #{machine_ns => NS, machine_id => ID}})},
-    {ok, marshal_result(LatestEventID, Response, PseudoResult, #{})};
-handle_result(_NS, _ID, LatestEventID, {ok, {Response, Result}}) ->
-    {ok, marshal_result(LatestEventID, Response, Result, #{})};
-handle_result(_NS, _ID, LatestEventID, {Response, Result}) ->
-    {ok, marshal_result(LatestEventID, Response, Result, #{})};
-handle_result(_NS, _ID, LatestEventID, Result) ->
-    {ok, marshal_result(LatestEventID, undefined, Result, #{})}.
+    Response = {repair_error, marshal(content, {Reason, SContext})},
+    {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, PseudoResult, #{})};
+handle_result(Schema, SContext, EventVersion, LatestEventID, {ok, {Response, Result}}) ->
+    {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, Result, #{})};
+handle_result(Schema, SContext, EventVersion, LatestEventID, {Response, Result}) ->
+    {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, Result, #{})};
+handle_result(Schema, SContext, EventVersion, LatestEventID, Result) ->
+    {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, undefined, Result, #{})}.
 
-unmarshal_process(NS, RangeArgs, Process = #{process_id := ID, history := History}) ->
+unmarshal_process(NS, RangeArgs, Process = #{process_id := ID, history := History}, Schema) ->
+    SContext0 = build_schema_context(NS, ID),
     AuxState = maps:get(aux_state, Process, undefined),
-    specify_range(RangeArgs, #{
+    MachineProcess = specify_range(RangeArgs, #{
         namespace => NS,
         id => ID,
-        history => unmarshal({list, event}, History),
+        history => unmarshal({list, {event, Schema, SContext0}}, History),
+        %% TODO AuxState version?
         aux_state => unmarshal(aux_state, AuxState)
-    }).
+    }),
+    {MachineProcess, SContext0}.
 
-marshal_result(LatestEventID, Response, Result, Metadata) ->
+marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, Result, Metadata) ->
     Events = maps:get(events, Result, []),
     Actions = maps:get(action, Result, []),
     AuxState = maps:get(aux_state, Result, undefined),
     genlib_map:compact(#{
-        events => marshal(event_bodies, {LatestEventID, Events}),
+        %% TODO Event version?
+        events => marshal({event_bodies, EventVersion, Schema, SContext}, {LatestEventID, Events}),
         action => marshal(actions, Actions),
         response => Response,
+        %% TODO AuxState version?
         aux_state => marshal(aux_state, AuxState),
         metadata => Metadata
     }).
@@ -282,17 +288,20 @@ marshal(actions, V) when is_list(V) ->
     );
 marshal(actions, V) ->
     marshal(actions, [V]);
-marshal(event_bodies, {LatestID, Events}) ->
+marshal({event_bodies, Version, Schema, SContext}, {LatestID, Events}) ->
     lists:map(
         fun({ID, Ev}) ->
+            % It is expected that schema doesn't want to save anything in the context here.
+            {Event, SContext} = machinery_mg_schema:marshal(Schema, {event, Version}, Ev, SContext),
+
             #{
                 %% FIXME Those fields must not be exposed here!
                 %% process_id := id(),
                 %% task_id := task_id(),
                 event_id => ID,
                 timestamp => genlib_time:now(),
-                metadata => #{format => 1},
-                payload => marshal(content, Ev)
+                metadata => #{format => Version},
+                payload => marshal(content, Event)
             }
         end,
         lists:zip(lists:seq(LatestID + 1, LatestID + erlang:length(Events)), Events)
@@ -310,7 +319,7 @@ unmarshal(args, V) ->
     unmarshal(content, V);
 unmarshal(aux_state, V) ->
     unmarshal(content, V);
-unmarshal(event, V) ->
+unmarshal({event, Schema, Context0}, V) ->
     %% TODO Only '#{metadata := #{format := 1}, ...}' for now
     %% process_id := id(),
     %% task_id := task_id(),
@@ -318,8 +327,16 @@ unmarshal(event, V) ->
     %% timestamp := timestamp_sec(),
     %% metadata => #{format => pos_integer()},
     %% payload := binary()
+    Metadata = maps:get(metadata, V, #{}),
+    Version = maps:get(format, Metadata, 0),
+    Payload0 = maps:get(payload, V),
+    Payload1 = unmarshal(content, Payload0),
     DateTime = calendar:system_time_to_universal_time(maps:get(timestamp, V), 1),
-    {maps:get(event_id, V), {DateTime, 0}, unmarshal(content, maps:get(payload, V))};
+    CreatedAt = {DateTime, 0},
+    Context1 = Context0#{created_at => CreatedAt},
+    % It is expected that schema doesn't want to save anything in the context here.
+    {Payload2, Context1} = machinery_mg_schema:unmarshal(Schema, {event, Version}, Payload1, Context1),
+    {maps:get(event_id, V), CreatedAt, Payload2};
 unmarshal({list, T}, V) when is_list(V) ->
     lists:map(fun(SV) -> unmarshal(T, SV) end, V);
 unmarshal(content, undefined) ->

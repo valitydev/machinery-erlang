@@ -208,7 +208,7 @@ backend_opts() ->
     #{
         namespace => namespace(),
         handler => ?MODULE,
-        schema => ?MODULE
+        schema => machinery_mg_schema_generic
     }.
 
 unique() ->
