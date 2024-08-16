@@ -73,7 +73,7 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
     %% TODO Add history range support
     case progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
         {ok, {repair_error, Reason}} ->
-            {error, {failed, unmarshal(content, Reason)}};
+            {error, {failed, decode(term, Reason)}};
         {ok, _Result} = Response ->
             Response;
         {error, <<"namespace not found">>} ->
@@ -149,8 +149,8 @@ make_request(NS, ID, Args, CtxOpts) ->
     #{
         ns => NS,
         id => ID,
-        args => marshal(args, Args),
-        context => marshal(context, maps:with([woody_ctx], CtxOpts))
+        args => encode(args, Args),
+        context => encode(context, maps:with([woody_ctx], CtxOpts))
     }.
 
 build_schema_context(NS, ID) ->
@@ -172,29 +172,29 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
         Schema = get_schema(Opts),
         %% TODO Passthrough history range
         {Machine, SContext} = unmarshal_process(maps:get(namespace, Opts), #{}, Process, Schema),
-        ProcessCtx = unmarshal(context, BinCtx),
+        ProcessCtx = decode(context, BinCtx),
         Handler = machinery_utils:expand_modopts(maps:get(handler, Opts), #{}),
         Result =
             case CallType of
                 init ->
-                    Args = unmarshal(args, BinArgs),
+                    Args = decode(args, BinArgs),
                     machinery:dispatch_signal({init, Args}, Machine, Handler, ProcessCtx);
                 timeout ->
                     %% FIXME Timeout args are unmarshalable '<<>>'
                     machinery:dispatch_signal(timeout, Machine, Handler, ProcessCtx);
                 %% NOTE Not actually implemented on a client but mocked via 'call'
                 notify ->
-                    Args = unmarshal(args, BinArgs),
+                    Args = decode(args, BinArgs),
                     machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
                 call ->
-                    case unmarshal(args, BinArgs) of
+                    case decode(args, BinArgs) of
                         {notify, Args} ->
                             machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
                         Args ->
                             machinery:dispatch_call(Args, Machine, Handler, ProcessCtx)
                     end;
                 repair ->
-                    Args = unmarshal(args, BinArgs),
+                    Args = decode(args, BinArgs),
                     machinery:dispatch_repair(Args, Machine, Handler, ProcessCtx)
             end,
         handle_result(Schema, SContext, ?DEFAULT_EVENT_VERSION, latest_event_id(Machine), Result)
@@ -214,14 +214,14 @@ latest_event_id(#{history := History}) ->
 
 handle_result(Schema, SContext, EventVersion, LatestEventID, {error, Reason}) ->
     %% _ = LatestEventID,
-    %% {error, marshal(content, {Reason, #{machine_ns => NS, machine_id => ID}})};
+    %% {error, encode(term, {Reason, #{machine_ns => NS, machine_id => ID}})};
     %% TODO Review '{error, Reason}' clause for it is very special and
     %% only for repairing issues.
     %%
     %% Dirty hack with response. However it breaks contract since this
     %% process call MUST NOT produce new effects, state or action!
     PseudoResult = #{},
-    Response = {repair_error, marshal(content, {Reason, SContext})},
+    Response = {repair_error, encode(term, {Reason, SContext})},
     {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, PseudoResult, #{})};
 handle_result(Schema, SContext, EventVersion, LatestEventID, {ok, {Response, Result}}) ->
     {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, Result, #{})};
@@ -238,7 +238,7 @@ unmarshal_process(NS, RangeArgs, Process = #{process_id := ID, history := Histor
         id => ID,
         history => unmarshal({list, {event, Schema, SContext0}}, History),
         %% TODO AuxState version?
-        aux_state => unmarshal(aux_state, AuxState)
+        aux_state => decode(aux_state, AuxState)
     }),
     {MachineProcess, SContext0}.
 
@@ -252,21 +252,40 @@ marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, Result, 
         action => marshal(actions, Actions),
         response => Response,
         %% TODO AuxState version?
-        aux_state => marshal(aux_state, AuxState),
+        aux_state => encode(aux_state, AuxState),
         metadata => Metadata
     }).
 
-%% TODO Move marshalling utils
+%% Term encoding/decoding
+
+encode(args, V) ->
+    encode(term, V);
+encode(context, V) ->
+    encode(term, V);
+encode(aux_state, V) ->
+    encode(term, V);
+encode(term, undefined) ->
+    undefined;
+encode(term, V) ->
+    erlang:term_to_binary(V).
+
+decode(args, V) ->
+    decode(term, V);
+decode(context, V) ->
+    decode(term, V);
+decode(aux_state, V) ->
+    decode(term, V);
+decode(term, undefined) ->
+    undefined;
+decode(term, V) ->
+    erlang:binary_to_term(V).
+
 %% Marshalling
 
-marshal(timeout, {timeout, V}) ->
+marshal(timeout, {timeout, V}) when is_integer(V) ->
     V;
-marshal(timeout, {deadline, V}) ->
+marshal(timeout, {deadline, V = {_Date, _Time}}) ->
     genlib_time:daytime_to_unixtime(V) - erlang:system_time(second);
-marshal(context, V) ->
-    marshal(content, V);
-marshal(args, V) ->
-    marshal(content, V);
 marshal(actions, V) when is_list(V) ->
     lists:foldl(
         fun
@@ -301,24 +320,12 @@ marshal({event_bodies, Version, Schema, SContext}, {LatestID, Events}) ->
                 event_id => ID,
                 timestamp => genlib_time:now(),
                 metadata => #{format => Version},
-                payload => marshal(content, Event)
+                payload => encode(term, Event)
             }
         end,
         lists:zip(lists:seq(LatestID + 1, LatestID + erlang:length(Events)), Events)
-    );
-marshal(aux_state, V) ->
-    marshal(content, V);
-marshal(content, undefined) ->
-    undefined;
-marshal(content, V) ->
-    erlang:term_to_binary(V).
+    ).
 
-unmarshal(context, V) ->
-    unmarshal(content, V);
-unmarshal(args, V) ->
-    unmarshal(content, V);
-unmarshal(aux_state, V) ->
-    unmarshal(content, V);
 unmarshal({event, Schema, Context0}, V) ->
     %% TODO Only '#{metadata := #{format := 1}, ...}' for now
     %% process_id := id(),
@@ -330,7 +337,7 @@ unmarshal({event, Schema, Context0}, V) ->
     Metadata = maps:get(metadata, V, #{}),
     Version = maps:get(format, Metadata, 0),
     Payload0 = maps:get(payload, V),
-    Payload1 = unmarshal(content, Payload0),
+    Payload1 = decode(term, Payload0),
     DateTime = calendar:system_time_to_universal_time(maps:get(timestamp, V), 1),
     CreatedAt = {DateTime, 0},
     Context1 = Context0#{created_at => CreatedAt},
@@ -338,12 +345,9 @@ unmarshal({event, Schema, Context0}, V) ->
     {Payload2, Context1} = machinery_mg_schema:unmarshal(Schema, {event, Version}, Payload1, Context1),
     {maps:get(event_id, V), CreatedAt, Payload2};
 unmarshal({list, T}, V) when is_list(V) ->
-    lists:map(fun(SV) -> unmarshal(T, SV) end, V);
-unmarshal(content, undefined) ->
-    undefined;
-unmarshal(content, V) ->
-    %% Go with stupid simple
-    erlang:binary_to_term(V).
+    [unmarshal(T, SV) || SV <- V].
+
+%%
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
