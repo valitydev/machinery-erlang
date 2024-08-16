@@ -18,20 +18,28 @@
 
 %% Machine API
 
--type backend_opts() :: #{
-    %% TODO Context?
-    %% context := _,
+-define(BACKEND_CORE_OPTS,
     handler := machinery:logic_handler(_),
-    namespace := machinery:namespace()
+    namespace := machinery:namespace(),
+    schema := machinery_mg_schema:schema()
+).
+
+-type backend_opts() :: #{
+    ?BACKEND_CORE_OPTS
 }.
 
--type ctx_opts() :: map().
+-export_type([backend_opts/0]).
 
--spec new(woody_context:ctx(), ctx_opts()) -> machinery:backend(ctx_opts()).
+-type ctx_opts() :: #{
+    ?BACKEND_CORE_OPTS,
+    woody_ctx := woody_context:ctx()
+}.
+
+-spec new(woody_context:ctx(), backend_opts()) -> machinery:backend(ctx_opts()).
 new(WoodyCtx, CtxOpts) ->
     {?MODULE, CtxOpts#{woody_ctx => WoodyCtx}}.
 
--spec start(machinery:namespace(), machinery:id(), machinery:args(_), backend_opts()) -> ok | {error, exists}.
+-spec start(machinery:namespace(), machinery:id(), machinery:args(_), ctx_opts()) -> ok | {error, exists}.
 start(NS, ID, Args, CtxOpts) ->
     case progressor:init(make_request(NS, ID, Args, CtxOpts)) of
         {ok, ok} ->
@@ -44,7 +52,7 @@ start(NS, ID, Args, CtxOpts) ->
             {error, exists}
     end.
 
--spec call(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
+-spec call(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
     {ok, machinery:response(_)} | {error, notfound}.
 call(NS, ID, _Range, Args, CtxOpts) ->
     %% TODO Add history range support
@@ -59,7 +67,7 @@ call(NS, ID, _Range, Args, CtxOpts) ->
             erlang:error({failed, NS, ID})
     end.
 
--spec repair(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
+-spec repair(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
     {ok, machinery:response(_)} | {error, {failed, machinery:error(_)} | notfound | working}.
 repair(NS, ID, _Range, Args, CtxOpts) ->
     %% TODO Add history range support
@@ -78,7 +86,7 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
             erlang:error({failed, NS, ID})
     end.
 
--spec get(machinery:namespace(), machinery:id(), machinery:range(), backend_opts()) ->
+-spec get(machinery:namespace(), machinery:id(), machinery:range(), ctx_opts()) ->
     {ok, machinery:machine(_, _)} | {error, notfound}.
 get(NS, ID, Range, CtxOpts) ->
     RangeArgs = range_args(Range),
@@ -91,7 +99,7 @@ get(NS, ID, Range, CtxOpts) ->
             {error, notfound}
     end.
 
--spec notify(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
+-spec notify(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
     ok | {error, notfound} | no_return().
 notify(NS, ID, _Range, Args, CtxOpts) ->
     %% TODO Add history range support
@@ -135,11 +143,12 @@ specify_range(RangeArgs, Machine = #{history := History}) ->
     Machine#{range => {Offset, Limit1, forward}}.
 
 make_request(NS, ID, Args, CtxOpts) ->
+    _Schema = maps:get(schema, CtxOpts),
     #{
         ns => NS,
         id => ID,
         args => marshal(args, Args),
-        context => marshal(context, CtxOpts)
+        context => marshal(context, maps:with([woody_ctx], CtxOpts))
     }.
 
 %% Machine's processor callback entrypoint
@@ -152,8 +161,9 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
     try
         %% TODO Passthrough history range
         Machine = unmarshal_process(maps:get(namespace, Opts), #{}, Process),
-        CtxOpts = unmarshal(context, BinCtx),
+        ProcessCtx = unmarshal(context, BinCtx),
         Handler = machinery_utils:expand_modopts(maps:get(handler, Opts), #{}),
+        _Schema = maps:get(schema, Opts),
         handle_result(
             machine_namespace(Machine),
             machine_id(Machine),
@@ -161,24 +171,24 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
             case CallType of
                 init ->
                     Args = unmarshal(args, BinArgs),
-                    machinery:dispatch_signal({init, Args}, Machine, Handler, CtxOpts);
+                    machinery:dispatch_signal({init, Args}, Machine, Handler, ProcessCtx);
                 timeout ->
                     %% FIXME Timeout args are unmarshalable '<<>>'
-                    machinery:dispatch_signal(timeout, Machine, Handler, CtxOpts);
+                    machinery:dispatch_signal(timeout, Machine, Handler, ProcessCtx);
                 %% NOTE Not actually implemented on a client but mocked via 'call'
                 notify ->
                     Args = unmarshal(args, BinArgs),
-                    machinery:dispatch_signal({notification, Args}, Machine, Handler, CtxOpts);
+                    machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
                 call ->
                     case unmarshal(args, BinArgs) of
                         {notify, Args} ->
-                            machinery:dispatch_signal({notification, Args}, Machine, Handler, CtxOpts);
+                            machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
                         Args ->
-                            machinery:dispatch_call(Args, Machine, Handler, CtxOpts)
+                            machinery:dispatch_call(Args, Machine, Handler, ProcessCtx)
                     end;
                 repair ->
                     Args = unmarshal(args, BinArgs),
-                    machinery:dispatch_repair(Args, Machine, Handler, CtxOpts)
+                    machinery:dispatch_repair(Args, Machine, Handler, ProcessCtx)
             end
         )
     catch
