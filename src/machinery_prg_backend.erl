@@ -64,7 +64,10 @@ call(NS, ID, _Range, Args, CtxOpts) ->
         {error, <<"namespace not found">>} ->
             erlang:error({namespace_not_found, NS});
         {error, <<"process is error">>} ->
-            erlang:error({failed, NS, ID})
+            erlang:error({failed, NS, ID});
+        {error, _Reason} = Error ->
+            %% NOTE Wtf, review specs
+            {ok, Error}
     end.
 
 -spec repair(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
@@ -201,6 +204,8 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
             %% TODO Fail machine/process?
             %% TODO Add logging or span tracing
             %% ct:print("~p~n", [{Class, Reason, Stacktrace}]),
+            %% TODO Maybe return
+            %% {error, {exception, Class, Reason}},
             erlang:raise(Class, Reason, Stacktrace)
     end.
 
