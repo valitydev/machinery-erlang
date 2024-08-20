@@ -164,8 +164,6 @@ build_schema_context(NS, ID) ->
 -type encoded_args() :: binary().
 -type encoded_ctx() :: binary().
 
--define(DEFAULT_EVENT_VERSION, 1).
-
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
     try
@@ -197,7 +195,7 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
                     Args = decode(args, BinArgs),
                     machinery:dispatch_repair(Args, Machine, Handler, ProcessCtx)
             end,
-        handle_result(Schema, SContext, ?DEFAULT_EVENT_VERSION, latest_event_id(Machine), Result)
+        handle_result(Schema, SContext, latest_event_id(Machine), Result)
     catch
         Class:Reason:Stacktrace ->
             %% TODO Fail machine/process?
@@ -212,7 +210,7 @@ latest_event_id(#{history := History}) ->
     {LatestEventID, _, _} = lists:last(History),
     LatestEventID.
 
-handle_result(Schema, SContext, EventVersion, LatestEventID, {error, Reason}) ->
+handle_result(Schema, SContext, LatestEventID, {error, Reason}) ->
     %% _ = LatestEventID,
     %% {error, encode(term, {Reason, #{machine_ns => NS, machine_id => ID}})};
     %% TODO Review '{error, Reason}' clause for it is very special and
@@ -222,13 +220,13 @@ handle_result(Schema, SContext, EventVersion, LatestEventID, {error, Reason}) ->
     %% process call MUST NOT produce new effects, state or action!
     PseudoResult = #{},
     Response = {repair_error, encode(term, {Reason, SContext})},
-    {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, PseudoResult, #{})};
-handle_result(Schema, SContext, EventVersion, LatestEventID, {ok, {Response, Result}}) ->
-    {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, Result, #{})};
-handle_result(Schema, SContext, EventVersion, LatestEventID, {Response, Result}) ->
-    {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, Result, #{})};
-handle_result(Schema, SContext, EventVersion, LatestEventID, Result) ->
-    {ok, marshal_result(Schema, SContext, EventVersion, LatestEventID, undefined, Result, #{})}.
+    {ok, marshal_result(Schema, SContext, LatestEventID, Response, PseudoResult, #{})};
+handle_result(Schema, SContext, LatestEventID, {ok, {Response, Result}}) ->
+    {ok, marshal_result(Schema, SContext, LatestEventID, Response, Result, #{})};
+handle_result(Schema, SContext, LatestEventID, {Response, Result}) ->
+    {ok, marshal_result(Schema, SContext, LatestEventID, Response, Result, #{})};
+handle_result(Schema, SContext, LatestEventID, Result) ->
+    {ok, marshal_result(Schema, SContext, LatestEventID, undefined, Result, #{})}.
 
 unmarshal_process(NS, RangeArgs, Process = #{process_id := ID, history := History}, Schema) ->
     SContext0 = build_schema_context(NS, ID),
@@ -242,13 +240,13 @@ unmarshal_process(NS, RangeArgs, Process = #{process_id := ID, history := Histor
     }),
     {MachineProcess, SContext0}.
 
-marshal_result(Schema, SContext, EventVersion, LatestEventID, Response, Result, Metadata) ->
+marshal_result(Schema, SContext, LatestEventID, Response, Result, Metadata) ->
     Events = maps:get(events, Result, []),
     Actions = maps:get(action, Result, []),
     AuxState = maps:get(aux_state, Result, undefined),
     genlib_map:compact(#{
         %% TODO Event version?
-        events => marshal({event_bodies, EventVersion, Schema, SContext}, {LatestEventID, Events}),
+        events => marshal({event_bodies, Schema, SContext}, {LatestEventID, Events}),
         action => marshal(actions, Actions),
         response => Response,
         %% TODO AuxState version?
@@ -307,7 +305,8 @@ marshal(actions, V) when is_list(V) ->
     );
 marshal(actions, V) ->
     marshal(actions, [V]);
-marshal({event_bodies, Version, Schema, SContext}, {LatestID, Events}) ->
+marshal({event_bodies, Schema, SContext}, {LatestID, Events}) ->
+    Version = machinery_mg_schema:get_version(Schema, event),
     lists:map(
         fun({ID, Ev}) ->
             % It is expected that schema doesn't want to save anything in the context here.
@@ -319,7 +318,7 @@ marshal({event_bodies, Version, Schema, SContext}, {LatestID, Events}) ->
                 %% task_id := task_id(),
                 event_id => ID,
                 timestamp => genlib_time:now(),
-                metadata => #{format => Version},
+                metadata => #{<<"format">> => Version},
                 payload => encode(term, Event)
             }
         end,
@@ -335,7 +334,7 @@ unmarshal({event, Schema, Context0}, V) ->
     %% metadata => #{format => pos_integer()},
     %% payload := binary()
     Metadata = maps:get(metadata, V, #{}),
-    Version = maps:get(format, Metadata, 0),
+    Version = maps:get(<<"format">>, Metadata, 0),
     Payload0 = maps:get(payload, V),
     Payload1 = decode(term, Payload0),
     DateTime = calendar:system_time_to_universal_time(maps:get(timestamp, V), 1),

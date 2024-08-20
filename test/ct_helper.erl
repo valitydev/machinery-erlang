@@ -156,6 +156,7 @@ get_woody_ctx(C) ->
 
 -spec construct_progressor_config(machinery_prg_backend:backend_opts()) -> {atom(), term()}.
 construct_progressor_config(BackendOpts) ->
+    Namespace = maps:get(namespace, BackendOpts),
     {progressor, [
         {call_wait_timeout, 20},
         {defaults, #{
@@ -178,7 +179,7 @@ construct_progressor_config(BackendOpts) ->
             process_step_timeout => 30
         }},
         {namespaces, #{
-            general => #{
+            Namespace => #{
                 processor => #{
                     client => machinery_prg_backend,
                     options => BackendOpts
