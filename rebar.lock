@@ -49,7 +49,7 @@
  {<<"pooler">>,{pkg,<<"pooler">>,<<"1.5.3">>},3},
  {<<"progressor">>,
   {git,"https://github.com/valitydev/progressor.git",
-       {ref,"5d90b22addb622d99632078c065e018959b89056"}},
+       {ref,"c54e140bd8eb00610447b46e8098ab0e7e90019d"}},
   0},
  {<<"prometheus">>,{pkg,<<"prometheus">>,<<"4.8.1">>},0},
  {<<"quantile_estimator">>,{pkg,<<"quantile_estimator">>,<<"0.2.1">>},1},
