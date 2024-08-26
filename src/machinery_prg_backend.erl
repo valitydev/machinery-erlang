@@ -1,6 +1,8 @@
 -module(machinery_prg_backend).
 
 -include_lib("progressor/include/progressor.hrl").
+-include_lib("opentelemetry_api/include/otel_tracer.hrl").
+-include_lib("opentelemetry_api/include/opentelemetry.hrl").
 
 -export([new/2]).
 
@@ -41,83 +43,98 @@ new(WoodyCtx, CtxOpts) ->
 
 -spec start(machinery:namespace(), machinery:id(), machinery:args(_), ctx_opts()) -> ok | {error, exists}.
 start(NS, ID, Args, CtxOpts) ->
-    case progressor:init(make_request(NS, ID, Args, CtxOpts)) of
-        {ok, ok} ->
-            ok;
-        {error, <<"namespace not found">>} ->
-            erlang:error({namespace_not_found, NS});
-        {error, <<"process is error">>} ->
-            erlang:error({failed, NS, ID});
-        {error, <<"process already exists">>} ->
-            {error, exists}
-    end.
+    SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
+    ?with_span(<<"start process">>, SpanOpts, fun(_SpanCtx) ->
+        case progressor:init(make_request(NS, ID, Args, CtxOpts)) of
+            {ok, ok} ->
+                ok;
+            {error, <<"namespace not found">>} ->
+                erlang:error({namespace_not_found, NS});
+            {error, <<"process is error">>} ->
+                erlang:error({failed, NS, ID});
+            {error, <<"process already exists">>} ->
+                {error, exists}
+        end
+    end).
 
 -spec call(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
     {ok, machinery:response(_)} | {error, notfound}.
 call(NS, ID, _Range, Args, CtxOpts) ->
-    %% TODO Add history range support
-    case progressor:call(make_request(NS, ID, Args, CtxOpts)) of
-        {ok, _Result} = Response ->
-            Response;
-        {error, <<"process not found">>} ->
-            {error, notfound};
-        {error, <<"namespace not found">>} ->
-            erlang:error({namespace_not_found, NS});
-        {error, <<"process is error">>} ->
-            erlang:error({failed, NS, ID});
-        {error, _Reason} = Error ->
-            %% NOTE Wtf, review specs
-            {ok, Error}
-    end.
+    SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
+    ?with_span(<<"call process">>, SpanOpts, fun(_SpanCtx) ->
+        %% TODO Add history range support
+        case progressor:call(make_request(NS, ID, Args, CtxOpts)) of
+            {ok, _Result} = Response ->
+                Response;
+            {error, <<"process not found">>} ->
+                {error, notfound};
+            {error, <<"namespace not found">>} ->
+                erlang:error({namespace_not_found, NS});
+            {error, <<"process is error">>} ->
+                erlang:error({failed, NS, ID});
+            {error, _Reason} = Error ->
+                %% NOTE Wtf, review specs
+                {ok, Error}
+        end
+    end).
 
 -spec repair(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
     {ok, machinery:response(_)} | {error, {failed, machinery:error(_)} | notfound | working}.
 repair(NS, ID, _Range, Args, CtxOpts) ->
-    %% TODO Add history range support
-    case progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
-        {ok, {repair_error, Reason}} ->
-            {error, {failed, decode(term, Reason)}};
-        {ok, _Result} = Response ->
-            Response;
-        {error, <<"namespace not found">>} ->
-            erlang:error({namespace_not_found, NS});
-        {error, <<"process not found">>} ->
-            {error, notfound};
-        {error, <<"process is running">>} ->
-            {error, working};
-        {error, <<"process is error">>} ->
-            erlang:error({failed, NS, ID})
-    end.
+    SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
+    ?with_span(<<"repair process">>, SpanOpts, fun(_SpanCtx) ->
+        %% TODO Add history range support
+        case progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
+            {ok, {repair_error, Reason}} ->
+                {error, {failed, decode(term, Reason)}};
+            {ok, _Result} = Response ->
+                Response;
+            {error, <<"namespace not found">>} ->
+                erlang:error({namespace_not_found, NS});
+            {error, <<"process not found">>} ->
+                {error, notfound};
+            {error, <<"process is running">>} ->
+                {error, working};
+            {error, <<"process is error">>} ->
+                erlang:error({failed, NS, ID})
+        end
+    end).
 
 -spec get(machinery:namespace(), machinery:id(), machinery:range(), ctx_opts()) ->
     {ok, machinery:machine(_, _)} | {error, notfound}.
 get(NS, ID, Range, CtxOpts) ->
-    RangeArgs = range_args(Range),
-    case progressor:get(make_request(NS, ID, RangeArgs, CtxOpts)) of
-        {ok, Process} ->
-            {Machine, _SContext} = unmarshal_process(NS, RangeArgs, Process, get_schema(CtxOpts)),
-            {ok, Machine};
-        {error, <<"namespace not found">>} ->
-            erlang:error({namespace_not_found, NS});
-        {error, <<"process not found">>} ->
-            {error, notfound}
-    end.
+    SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
+    ?with_span(<<"get process">>, SpanOpts, fun(_SpanCtx) ->
+        RangeArgs = range_args(Range),
+        case progressor:get(make_request(NS, ID, RangeArgs, CtxOpts)) of
+            {ok, Process} ->
+                {Machine, _SContext} = unmarshal_process(NS, RangeArgs, Process, get_schema(CtxOpts)),
+                {ok, Machine};
+            {error, <<"namespace not found">>} ->
+                erlang:error({namespace_not_found, NS});
+            {error, <<"process not found">>} ->
+                {error, notfound}
+        end
+    end).
 
 -spec notify(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
     ok | {error, notfound} | no_return().
 notify(NS, ID, Range, Args, CtxOpts) ->
-    %% TODO Add history range support
-    %% FIXME Temporary pass notify as sync call
-    try
-        case call(NS, ID, Range, {notify, Args}, CtxOpts) of
-            {ok, _} -> ok;
-            R -> R
+    SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
+    ?with_span(<<"notify process">>, SpanOpts, fun(_SpanCtx) ->
+        %% TODO Add history range support
+        %% FIXME Temporary pass notify as sync call
+        try
+            case call(NS, ID, Range, {notify, Args}, CtxOpts) of
+                {ok, _} -> ok;
+                R -> R
+            end
+        catch
+            error:{failed, _NS, _ID} ->
+                %% NOTE Not a 'notify' error
+                ok
         end
-    catch
-        error:{failed, _NS, _ID} ->
-            %% NOTE Not a 'notify' error
-            ok
-    end.
+    end).
 
 %%
 
@@ -145,6 +162,9 @@ specify_range(RangeArgs, Machine = #{history := History}) ->
     Limit1 = erlang:min(Limit0, HistoryLen),
     Machine#{range => {Offset, Limit1, forward}}.
 
+get_namespace(#{namespace := Namespace}) ->
+    Namespace.
+
 get_schema(#{schema := Schema}) ->
     Schema.
 
@@ -169,45 +189,54 @@ build_schema_context(NS, ID) ->
 
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
-    try
-        Schema = get_schema(Opts),
-        %% TODO Passthrough history range
-        {Machine, SContext} = unmarshal_process(maps:get(namespace, Opts), #{}, Process, Schema),
-        ProcessCtx = decode(context, BinCtx),
-        Handler = machinery_utils:expand_modopts(maps:get(handler, Opts), #{}),
-        Result =
-            case CallType of
-                init ->
-                    Args = decode(args, BinArgs),
-                    machinery:dispatch_signal({init, Args}, Machine, Handler, ProcessCtx);
-                timeout ->
-                    %% FIXME Timeout args are unmarshalable '<<>>'
-                    machinery:dispatch_signal(timeout, Machine, Handler, ProcessCtx);
-                %% NOTE Not actually implemented on a client but mocked via 'call'
-                notify ->
-                    Args = decode(args, BinArgs),
-                    machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
-                call ->
-                    case decode(args, BinArgs) of
-                        {notify, Args} ->
-                            machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
-                        Args ->
-                            machinery:dispatch_call(Args, Machine, Handler, ProcessCtx)
-                    end;
-                repair ->
-                    Args = decode(args, BinArgs),
-                    machinery:dispatch_repair(Args, Machine, Handler, ProcessCtx)
-            end,
-        handle_result(Schema, SContext, latest_event_id(Machine), Result)
-    catch
-        Class:Reason:Stacktrace ->
-            %% TODO Fail machine/process?
-            %% TODO Add logging or span tracing
-            %% ct:print("~p~n", [{Class, Reason, Stacktrace}]),
-            %% TODO Maybe return
-            %% {error, {exception, Class, Reason}},
-            erlang:raise(Class, Reason, Stacktrace)
-    end.
+    NS = get_namespace(Opts),
+    ID = maps:get(process_id, Process),
+    SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
+    ?with_span(<<"processing">>, SpanOpts, fun(_SpanCtx) ->
+        try
+            do_process(CallType, BinArgs, Process, Opts, BinCtx)
+        catch
+            Class:Reason:Stacktrace ->
+                %% TODO Fail machine/process?
+                %% TODO Add logging or span tracing
+                %% ct:print("~p~n", [{Class, Reason, Stacktrace}]),
+                %% {error, {exception, Class, Reason}}
+                _ = ?record_exception(Class, Reason, Stacktrace, process_tags(NS, ID)),
+                erlang:raise(Class, Reason, Stacktrace)
+        end
+    end).
+
+do_process(CallType, BinArgs, Process, Opts, BinCtx) ->
+    Schema = get_schema(Opts),
+    NS = get_namespace(Opts),
+    %% TODO Passthrough history range
+    {Machine, SContext} = unmarshal_process(NS, #{}, Process, Schema),
+    ProcessCtx = decode(context, BinCtx),
+    Handler = machinery_utils:expand_modopts(maps:get(handler, Opts), #{}),
+    Result =
+        case CallType of
+            init ->
+                Args = decode(args, BinArgs),
+                machinery:dispatch_signal({init, Args}, Machine, Handler, ProcessCtx);
+            timeout ->
+                %% FIXME Timeout args are unmarshalable '<<>>'
+                machinery:dispatch_signal(timeout, Machine, Handler, ProcessCtx);
+            %% NOTE Not actually implemented on a client but mocked via 'call'
+            notify ->
+                Args = decode(args, BinArgs),
+                machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
+            call ->
+                case decode(args, BinArgs) of
+                    {notify, Args} ->
+                        machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
+                    Args ->
+                        machinery:dispatch_call(Args, Machine, Handler, ProcessCtx)
+                end;
+            repair ->
+                Args = decode(args, BinArgs),
+                machinery:dispatch_repair(Args, Machine, Handler, ProcessCtx)
+        end,
+    handle_result(Schema, SContext, latest_event_id(Machine), Result).
 
 latest_event_id(#{history := []}) ->
     0;
@@ -258,6 +287,14 @@ marshal_result(Schema, SContext, LatestEventID, Response, Result, Metadata) ->
         aux_state => encode(aux_state, AuxState),
         metadata => Metadata
     }).
+
+%% OTEL helpers
+
+process_tags(Namespace, ID) ->
+    #{
+        <<"progressor.process.ns">> => Namespace,
+        <<"progressor.process.id">> => ID
+    }.
 
 %% Term encoding/decoding
 
