@@ -34,7 +34,8 @@
 
 -type ctx_opts() :: #{
     ?BACKEND_CORE_OPTS,
-    woody_ctx := woody_context:ctx()
+    woody_ctx := woody_context:ctx(),
+    otel_ctx => otel_ctx:t()
 }.
 
 -spec new(woody_context:ctx(), backend_opts()) -> machinery:backend(ctx_opts()).
@@ -168,12 +169,13 @@ get_namespace(#{namespace := Namespace}) ->
 get_schema(#{schema := Schema}) ->
     Schema.
 
-make_request(NS, ID, Args, CtxOpts) ->
+make_request(NS, ID, Args, CtxOpts0) ->
+    CtxOpts1 = add_otel_context(CtxOpts0),
     #{
         ns => NS,
         id => ID,
         args => encode(args, Args),
-        context => encode(context, maps:with([woody_ctx], CtxOpts))
+        context => encode(context, maps:with([woody_ctx], CtxOpts1))
     }.
 
 build_schema_context(NS, ID) ->
@@ -189,12 +191,14 @@ build_schema_context(NS, ID) ->
 
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
+    ProcessCtx = decode(context, BinCtx),
+    ok = attach_otel_context(ProcessCtx),
     NS = get_namespace(Opts),
     ID = maps:get(process_id, Process),
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
     ?with_span(<<"processing">>, SpanOpts, fun(_SpanCtx) ->
         try
-            do_process(CallType, BinArgs, Process, Opts, BinCtx)
+            do_process(CallType, BinArgs, Process, Opts, ProcessCtx)
         catch
             Class:Reason:Stacktrace ->
                 %% TODO Fail machine/process?
@@ -206,12 +210,11 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
         end
     end).
 
-do_process(CallType, BinArgs, Process, Opts, BinCtx) ->
+do_process(CallType, BinArgs, Process, Opts, ProcessCtx) ->
     Schema = get_schema(Opts),
     NS = get_namespace(Opts),
     %% TODO Passthrough history range
     {Machine, SContext} = unmarshal_process(NS, #{}, Process, Schema),
-    ProcessCtx = decode(context, BinCtx),
     Handler = machinery_utils:expand_modopts(maps:get(handler, Opts), #{}),
     Result =
         case CallType of
@@ -289,6 +292,55 @@ marshal_result(Schema, SContext, LatestEventID, Response, Result, Metadata) ->
     }).
 
 %% OTEL helpers
+
+attach_otel_context(#{otel_ctx := PackedOtelCtx}) ->
+    case restore_otel_stub(otel_ctx:get_current(), PackedOtelCtx) of
+        NewCtx when map_size(NewCtx) =:= 0 ->
+            ok;
+        NewCtx ->
+            _ = otel_ctx:attach(choose_viable_otel_ctx(NewCtx, otel_ctx:get_current())),
+            ok
+    end;
+attach_otel_context(_) ->
+    ok.
+
+%% lowest bit is if it is sampled
+-define(IS_NOT_SAMPLED(SpanCtx), SpanCtx#span_ctx.trace_flags band 2#1 =/= 1).
+
+choose_viable_otel_ctx(NewCtx, CurrentCtx) ->
+    case {otel_tracer:current_span_ctx(NewCtx), otel_tracer:current_span_ctx(CurrentCtx)} of
+        {SpanCtx = #span_ctx{}, #span_ctx{}} when ?IS_NOT_SAMPLED(SpanCtx) -> CurrentCtx;
+        {undefined, #span_ctx{}} -> CurrentCtx;
+        {_, _} -> NewCtx
+    end.
+
+add_otel_context(CtxOpts) ->
+    CtxOpts#{otel_ctx => pack_otel_stub(otel_ctx:get_current())}.
+
+pack_otel_stub(Ctx) ->
+    case otel_tracer:current_span_ctx(Ctx) of
+        undefined ->
+            [];
+        #span_ctx{trace_id = TraceID, span_id = SpanID, trace_flags = TraceFlags} ->
+            [trace_id_to_binary(TraceID), span_id_to_binary(SpanID), TraceFlags]
+    end.
+
+restore_otel_stub(Ctx, [TraceID, SpanID, TraceFlags]) ->
+    SpanCtx = otel_tracer:from_remote_span(binary_to_id(TraceID), binary_to_id(SpanID), TraceFlags),
+    otel_tracer:set_current_span(Ctx, SpanCtx);
+restore_otel_stub(Ctx, _Other) ->
+    Ctx.
+
+trace_id_to_binary(TraceID) ->
+    {ok, EncodedTraceID} = otel_utils:format_binary_string("~32.16.0b", [TraceID]),
+    EncodedTraceID.
+
+span_id_to_binary(SpanID) ->
+    {ok, EncodedSpanID} = otel_utils:format_binary_string("~16.16.0b", [SpanID]),
+    EncodedSpanID.
+
+binary_to_id(Opaque) when is_binary(Opaque) ->
+    binary_to_integer(Opaque, 16).
 
 process_tags(Namespace, ID) ->
     #{
