@@ -35,7 +35,7 @@
     id := id(),
     history := history(E),
     aux_state := aux_state(A),
-    range := range()
+    range => range()
     %% TODO
     %% timer ?
 }.
