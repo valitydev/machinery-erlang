@@ -375,9 +375,9 @@ decode(term, V) ->
 %% Marshalling
 
 marshal(timeout, {timeout, V}) when is_integer(V) ->
-    V;
+    erlang:system_time(second) + V;
 marshal(timeout, {deadline, V = {_Date, _Time}}) ->
-    genlib_time:daytime_to_unixtime(V) - erlang:system_time(second);
+    genlib_time:daytime_to_unixtime(V);
 marshal(actions, V) when is_list(V) ->
     lists:foldl(
         fun
