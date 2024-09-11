@@ -38,6 +38,8 @@
     otel_ctx => otel_ctx:t()
 }.
 
+-define(PROCESS_FAILURE, {woody_error, {external, result_unexpected, _FormattedReason}}).
+
 -spec new(woody_context:ctx(), backend_opts()) -> machinery:backend(ctx_opts()).
 new(WoodyCtx, CtxOpts) ->
     {?MODULE, CtxOpts#{woody_ctx => WoodyCtx}}.
@@ -46,15 +48,16 @@ new(WoodyCtx, CtxOpts) ->
 start(NS, ID, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
     ?with_span(<<"start process">>, SpanOpts, fun(_SpanCtx) ->
-        case progressor:init(make_request(NS, ID, Args, CtxOpts)) of
+        try progressor:init(make_request(NS, ID, Args, CtxOpts)) of
             {ok, ok} ->
                 ok;
             {error, <<"namespace not found">>} ->
                 erlang:error({namespace_not_found, NS});
-            {error, <<"process is error">>} ->
-                erlang:error({failed, NS, ID});
             {error, <<"process already exists">>} ->
                 {error, exists}
+        catch
+            error:?PROCESS_FAILURE:_Stacktrace ->
+                erlang:error({failed, NS, ID})
         end
     end).
 
@@ -64,18 +67,23 @@ call(NS, ID, _Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
     ?with_span(<<"call process">>, SpanOpts, fun(_SpanCtx) ->
         %% TODO Add history range support
-        case progressor:call(make_request(NS, ID, Args, CtxOpts)) of
+        try progressor:call(make_request(NS, ID, Args, CtxOpts)) of
             {ok, _Result} = Response ->
                 Response;
             {error, <<"process not found">>} ->
                 {error, notfound};
             {error, <<"namespace not found">>} ->
                 erlang:error({namespace_not_found, NS});
+            %% NOTE Clause for an error from progressor's internal
+            %% process status guard
             {error, <<"process is error">>} ->
                 erlang:error({failed, NS, ID});
             {error, _Reason} = Error ->
                 %% NOTE Wtf, review specs
                 {ok, Error}
+        catch
+            error:?PROCESS_FAILURE:_Stacktrace ->
+                erlang:error({failed, NS, ID})
         end
     end).
 
@@ -85,7 +93,7 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
     ?with_span(<<"repair process">>, SpanOpts, fun(_SpanCtx) ->
         %% TODO Add history range support
-        case progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
+        try progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
             {ok, {repair_error, Reason}} ->
                 {error, {failed, decode(term, Reason)}};
             {ok, _Result} = Response ->
@@ -96,7 +104,12 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
                 {error, notfound};
             {error, <<"process is running">>} ->
                 {error, working};
+            %% NOTE Clause for an error from progressor's internal
+            %% process status guard
             {error, <<"process is error">>} ->
+                erlang:error({failed, NS, ID})
+        catch
+            error:?PROCESS_FAILURE:_Stacktrace ->
                 erlang:error({failed, NS, ID})
         end
     end).
@@ -248,6 +261,11 @@ latest_event_id(#{history := History}) ->
     LatestEventID.
 
 handle_result(Schema, SContext, LatestEventID, {error, Reason}) ->
+    %% _ = Schema,
+    %% _ = SContext,
+    %% _ = LatestEventID,
+    %% {error, encode(term, {Reason, #{}})};
+
     %% _ = LatestEventID,
     %% {error, encode(term, {Reason, #{machine_ns => NS, machine_id => ID}})};
     %% TODO Review '{error, Reason}' clause for it is very special and
@@ -376,7 +394,7 @@ decode(term, V) ->
 
 marshal(timeout, {timeout, V}) when is_integer(V) ->
     erlang:system_time(second) + V;
-marshal(timeout, {deadline, V = {_Date, _Time}}) ->
+marshal(timeout, {deadline, {V = {_Date, _Time}, _Micro}}) ->
     genlib_time:daytime_to_unixtime(V);
 marshal(actions, V) when is_list(V) ->
     lists:foldl(
@@ -391,7 +409,7 @@ marshal(actions, V) when is_list(V) ->
             %% 'set_timer' key must not be present for action to succeed.
             (remove, _) -> #{remove => true};
             (unset_timer, _) -> unset_timer;
-            (continue, _) -> #{set_timer => 0};
+            (continue, _) -> #{set_timer => erlang:system_time(second)};
             (_, A) -> A
         end,
         undefined,
