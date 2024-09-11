@@ -67,8 +67,7 @@ groups() ->
             complex_repair_test,
             %% ranged_repair_test,
             notfound_repair_test,
-            %% FIXME Enable after fixing repair error w/o changing machine state
-            %% failed_repair_test,
+            failed_repair_test,
             unexpected_failed_repair_test,
             unknown_namespace_repair_test,
             working_repair_test

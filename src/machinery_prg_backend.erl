@@ -94,8 +94,6 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
     ?with_span(<<"repair process">>, SpanOpts, fun(_SpanCtx) ->
         %% TODO Add history range support
         try progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
-            {ok, {repair_error, Reason}} ->
-                {error, {failed, decode(term, Reason)}};
             {ok, _Result} = Response ->
                 Response;
             {error, <<"namespace not found">>} ->
@@ -107,7 +105,9 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
             %% NOTE Clause for an error from progressor's internal
             %% process status guard
             {error, <<"process is error">>} ->
-                erlang:error({failed, NS, ID})
+                erlang:error({failed, NS, ID});
+            {error, Reason} ->
+                {error, {failed, decode(term, Reason)}}
         catch
             error:?PROCESS_FAILURE:_Stacktrace ->
                 erlang:error({failed, NS, ID})
@@ -214,12 +214,8 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
             do_process(CallType, BinArgs, Process, Opts, ProcessCtx)
         catch
             Class:Reason:Stacktrace ->
-                %% TODO Fail machine/process?
-                %% TODO Add logging or span tracing
-                %% ct:print("~p~n", [{Class, Reason, Stacktrace}]),
-                %% {error, {exception, Class, Reason}}
                 _ = ?record_exception(Class, Reason, Stacktrace, process_tags(NS, ID)),
-                erlang:raise(Class, Reason, Stacktrace)
+                {error, {exception, Class, Reason}}
         end
     end).
 
@@ -260,22 +256,8 @@ latest_event_id(#{history := History}) ->
     {LatestEventID, _, _} = lists:last(History),
     LatestEventID.
 
-handle_result(Schema, SContext, LatestEventID, {error, Reason}) ->
-    %% _ = Schema,
-    %% _ = SContext,
-    %% _ = LatestEventID,
-    %% {error, encode(term, {Reason, #{}})};
-
-    %% _ = LatestEventID,
-    %% {error, encode(term, {Reason, #{machine_ns => NS, machine_id => ID}})};
-    %% TODO Review '{error, Reason}' clause for it is very special and
-    %% only for repairing issues.
-    %%
-    %% Dirty hack with response. However it breaks contract since this
-    %% process call MUST NOT produce new effects, state or action!
-    PseudoResult = #{},
-    Response = {repair_error, encode(term, {Reason, SContext})},
-    {ok, marshal_result(Schema, SContext, LatestEventID, Response, PseudoResult, #{})};
+handle_result(_Schema, SContext, _LatestEventID, {error, Reason}) ->
+    {error, encode(term, {Reason, SContext})};
 handle_result(Schema, SContext, LatestEventID, {ok, {Response, Result}}) ->
     {ok, marshal_result(Schema, SContext, LatestEventID, Response, Result, #{})};
 handle_result(Schema, SContext, LatestEventID, {Response, Result}) ->
