@@ -38,7 +38,16 @@
     otel_ctx => otel_ctx:t()
 }.
 
--define(PROCESS_FAILURE, {woody_error, {external, result_unexpected, _FormattedReason}}).
+-ifdef(WITH_OTEL).
+-define(WITH_OTEL_SPAN(N, O, F), ?with_span(N, O, F)).
+-else.
+-define(WITH_OTEL_SPAN(N, O, F), begin
+    _ = N,
+    %% NOTE Prevents 'a term is constructed, but never used'
+    #{} = O,
+    F(otel_tracer_noop:noop_span_ctx())
+end).
+-endif.
 
 -spec new(woody_context:ctx(), backend_opts()) -> machinery:backend(ctx_opts()).
 new(WoodyCtx, CtxOpts) ->
@@ -47,16 +56,15 @@ new(WoodyCtx, CtxOpts) ->
 -spec start(machinery:namespace(), machinery:id(), machinery:args(_), ctx_opts()) -> ok | {error, exists}.
 start(NS, ID, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
-    ?with_span(<<"start process">>, SpanOpts, fun(_SpanCtx) ->
-        try progressor:init(make_request(NS, ID, Args, CtxOpts)) of
+    ?WITH_OTEL_SPAN(<<"start process">>, SpanOpts, fun(_SpanCtx) ->
+        case progressor:init(make_request(NS, ID, Args, CtxOpts)) of
             {ok, ok} ->
                 ok;
             {error, <<"namespace not found">>} ->
                 erlang:error({namespace_not_found, NS});
             {error, <<"process already exists">>} ->
-                {error, exists}
-        catch
-            error:?PROCESS_FAILURE:_Stacktrace ->
+                {error, exists};
+            {error, {exception, _Class, _Reason}} ->
                 erlang:error({failed, NS, ID})
         end
     end).
@@ -65,15 +73,17 @@ start(NS, ID, Args, CtxOpts) ->
     {ok, machinery:response(_)} | {error, notfound}.
 call(NS, ID, _Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
-    ?with_span(<<"call process">>, SpanOpts, fun(_SpanCtx) ->
+    ?WITH_OTEL_SPAN(<<"call process">>, SpanOpts, fun(_SpanCtx) ->
         %% TODO Add history range support
-        try progressor:call(make_request(NS, ID, Args, CtxOpts)) of
+        case progressor:call(make_request(NS, ID, Args, CtxOpts)) of
             {ok, _Result} = Response ->
                 Response;
             {error, <<"process not found">>} ->
                 {error, notfound};
             {error, <<"namespace not found">>} ->
                 erlang:error({namespace_not_found, NS});
+            {error, {exception, _Class, _Reason}} ->
+                erlang:error({failed, NS, ID});
             %% NOTE Clause for an error from progressor's internal
             %% process status guard
             {error, <<"process is error">>} ->
@@ -81,9 +91,6 @@ call(NS, ID, _Range, Args, CtxOpts) ->
             {error, _Reason} = Error ->
                 %% NOTE Wtf, review specs
                 {ok, Error}
-        catch
-            error:?PROCESS_FAILURE:_Stacktrace ->
-                erlang:error({failed, NS, ID})
         end
     end).
 
@@ -91,9 +98,9 @@ call(NS, ID, _Range, Args, CtxOpts) ->
     {ok, machinery:response(_)} | {error, {failed, machinery:error(_)} | notfound | working}.
 repair(NS, ID, _Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
-    ?with_span(<<"repair process">>, SpanOpts, fun(_SpanCtx) ->
+    ?WITH_OTEL_SPAN(<<"repair process">>, SpanOpts, fun(_SpanCtx) ->
         %% TODO Add history range support
-        try progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
+        case progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
             {ok, _Result} = Response ->
                 Response;
             {error, <<"namespace not found">>} ->
@@ -102,15 +109,14 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
                 {error, notfound};
             {error, <<"process is running">>} ->
                 {error, working};
+            {error, {exception, _Class, _Reason}} ->
+                erlang:error({failed, NS, ID});
             %% NOTE Clause for an error from progressor's internal
             %% process status guard
             {error, <<"process is error">>} ->
                 erlang:error({failed, NS, ID});
             {error, Reason} ->
                 {error, {failed, decode(term, Reason)}}
-        catch
-            error:?PROCESS_FAILURE:_Stacktrace ->
-                erlang:error({failed, NS, ID})
         end
     end).
 
@@ -118,7 +124,7 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
     {ok, machinery:machine(_, _)} | {error, notfound}.
 get(NS, ID, Range, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
-    ?with_span(<<"get process">>, SpanOpts, fun(_SpanCtx) ->
+    ?WITH_OTEL_SPAN(<<"get process">>, SpanOpts, fun(_SpanCtx) ->
         RangeArgs = range_args(Range),
         case progressor:get(make_request(NS, ID, RangeArgs, CtxOpts)) of
             {ok, Process} ->
@@ -135,7 +141,7 @@ get(NS, ID, Range, CtxOpts) ->
     ok | {error, notfound} | no_return().
 notify(NS, ID, Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
-    ?with_span(<<"notify process">>, SpanOpts, fun(_SpanCtx) ->
+    ?WITH_OTEL_SPAN(<<"notify process">>, SpanOpts, fun(_SpanCtx) ->
         %% TODO Add history range support
         %% FIXME Temporary pass notify as sync call
         try
@@ -209,7 +215,7 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
     NS = get_namespace(Opts),
     ID = maps:get(process_id, Process),
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
-    ?with_span(<<"processing">>, SpanOpts, fun(_SpanCtx) ->
+    ?WITH_OTEL_SPAN(<<"processing">>, SpanOpts, fun(_SpanCtx) ->
         try
             do_process(CallType, BinArgs, Process, Opts, ProcessCtx)
         catch
