@@ -15,6 +15,13 @@
 -type args(T) :: machinery:args(T).
 -type response(T) :: machinery:response(T).
 -type error(T) :: machinery:error(T).
+%% NOTE This backends may additionally return machine's simple status
+%% and timer target unixtime
+%% #{
+%%     ...,
+%%     timer => pos_integer(),
+%%     status => working | failed
+%% }
 -type machine(E, A) :: machinery:machine(E, A).
 -type logic_handler(T) :: machinery:logic_handler(T).
 
@@ -405,7 +412,9 @@ unmarshal(
         'id' = ID,
         'history' = History,
         'history_range' = Range,
-        'aux_state' = #mg_stateproc_Content{format_version = Version, data = AuxState}
+        'aux_state' = #mg_stateproc_Content{format_version = Version, data = AuxState},
+        'timer' = TimerTimestamp,
+        'status' = SimpleStatus
     }
 ) ->
     ID1 = unmarshal(id, ID),
@@ -417,9 +426,19 @@ unmarshal(
         id => ID1,
         history => unmarshal({history, Schema, Context1}, History),
         range => unmarshal(range, Range),
-        aux_state => AuxState1
+        aux_state => AuxState1,
+        timer => unmarshal(timer, TimerTimestamp),
+        status => unmarshal(status, SimpleStatus)
     },
     {Machine, Context1};
+unmarshal(timer, undefined) ->
+    undefined;
+unmarshal(timer, TimerTimestamp) when is_binary(TimerTimestamp) ->
+    genlib_rfc3339:parse(TimerTimestamp, second);
+unmarshal(status, undefined) ->
+    working;
+unmarshal(status, {SimpleStatus, _}) ->
+    SimpleStatus;
 unmarshal({history, Schema, Context}, V) ->
     unmarshal({list, {event, Schema, Context}}, V);
 unmarshal(

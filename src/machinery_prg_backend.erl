@@ -117,7 +117,7 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
             {error, <<"process is error">>} ->
                 erlang:error({failed, NS, ID});
             {error, Reason} ->
-                {error, {failed, decode(term, Reason)}}
+                {error, {failed, machinery_utils:decode(term, Reason)}}
         end
     end).
 
@@ -189,13 +189,12 @@ get_namespace(#{namespace := Namespace}) ->
 get_schema(#{schema := Schema}) ->
     Schema.
 
-make_request(NS, ID, Args, CtxOpts0) ->
-    CtxOpts1 = add_otel_context(CtxOpts0),
+make_request(NS, ID, Args, CtxOpts) ->
     #{
         ns => NS,
         id => ID,
-        args => encode(args, Args),
-        context => encode(context, maps:with([woody_ctx], CtxOpts1))
+        args => machinery_utils:encode(args, Args),
+        context => machinery_utils:encode(context, machinery_utils:add_otel_context(maps:with([woody_ctx], CtxOpts)))
     }.
 
 build_schema_context(NS, ID) ->
@@ -211,8 +210,8 @@ build_schema_context(NS, ID) ->
 
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
-    ProcessCtx = decode(context, BinCtx),
-    ok = attach_otel_context(ProcessCtx),
+    ProcessCtx = machinery_utils:decode(context, BinCtx),
+    ok = machinery_utils:attach_otel_context(ProcessCtx),
     NS = get_namespace(Opts),
     ID = maps:get(process_id, Process),
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
@@ -235,24 +234,24 @@ do_process(CallType, BinArgs, Process, Opts, ProcessCtx) ->
     Result =
         case CallType of
             init ->
-                Args = decode(args, BinArgs),
+                Args = machinery_utils:decode(args, BinArgs),
                 machinery:dispatch_signal({init, Args}, Machine, Handler, ProcessCtx);
             timeout ->
                 %% FIXME Timeout args are unmarshalable '<<>>'
                 machinery:dispatch_signal(timeout, Machine, Handler, ProcessCtx);
             %% NOTE Not actually implemented on a client but mocked via 'call'
             notify ->
-                Args = decode(args, BinArgs),
+                Args = machinery_utils:decode(args, BinArgs),
                 machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
             call ->
-                case decode(args, BinArgs) of
+                case machinery_utils:decode(args, BinArgs) of
                     {notify, Args} ->
                         machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
                     Args ->
                         machinery:dispatch_call(Args, Machine, Handler, ProcessCtx)
                 end;
             repair ->
-                Args = decode(args, BinArgs),
+                Args = machinery_utils:decode(args, BinArgs),
                 machinery:dispatch_repair(Args, Machine, Handler, ProcessCtx)
         end,
     handle_result(Schema, SContext, latest_event_id(Machine), Result).
@@ -264,7 +263,7 @@ latest_event_id(#{history := History}) ->
     LatestEventID.
 
 handle_result(_Schema, SContext, _LatestEventID, {error, Reason}) ->
-    {error, encode(term, {Reason, SContext})};
+    {error, machinery_utils:encode(term, {Reason, SContext})};
 handle_result(Schema, SContext, LatestEventID, {ok, {Response, Result}}) ->
     {ok, marshal_result(Schema, SContext, LatestEventID, Response, Result, #{})};
 handle_result(Schema, SContext, LatestEventID, {Response, Result}) ->
@@ -280,7 +279,7 @@ unmarshal_process(NS, RangeArgs, Process = #{process_id := ID, history := Histor
         id => ID,
         history => unmarshal({list, {event, Schema, SContext0}}, History),
         %% TODO AuxState version?
-        aux_state => decode(aux_state, AuxState)
+        aux_state => machinery_utils:decode(aux_state, AuxState)
     }),
     {MachineProcess, SContext0}.
 
@@ -294,90 +293,15 @@ marshal_result(Schema, SContext, LatestEventID, Response, Result, Metadata) ->
         action => marshal(actions, Actions),
         response => Response,
         %% TODO AuxState version?
-        aux_state => encode(aux_state, AuxState),
+        aux_state => machinery_utils:encode(aux_state, AuxState),
         metadata => Metadata
     }).
-
-%% OTEL helpers
-
-attach_otel_context(#{otel_ctx := PackedOtelCtx}) ->
-    case restore_otel_stub(otel_ctx:get_current(), PackedOtelCtx) of
-        NewCtx when map_size(NewCtx) =:= 0 ->
-            ok;
-        NewCtx ->
-            _ = otel_ctx:attach(choose_viable_otel_ctx(NewCtx, otel_ctx:get_current())),
-            ok
-    end;
-attach_otel_context(_) ->
-    ok.
-
-%% lowest bit is if it is sampled
--define(IS_NOT_SAMPLED(SpanCtx), SpanCtx#span_ctx.trace_flags band 2#1 =/= 1).
-
-choose_viable_otel_ctx(NewCtx, CurrentCtx) ->
-    case {otel_tracer:current_span_ctx(NewCtx), otel_tracer:current_span_ctx(CurrentCtx)} of
-        {SpanCtx = #span_ctx{}, #span_ctx{}} when ?IS_NOT_SAMPLED(SpanCtx) -> CurrentCtx;
-        {undefined, #span_ctx{}} -> CurrentCtx;
-        {_, _} -> NewCtx
-    end.
-
-add_otel_context(CtxOpts) ->
-    CtxOpts#{otel_ctx => pack_otel_stub(otel_ctx:get_current())}.
-
-pack_otel_stub(Ctx) ->
-    case otel_tracer:current_span_ctx(Ctx) of
-        undefined ->
-            [];
-        #span_ctx{trace_id = TraceID, span_id = SpanID, trace_flags = TraceFlags} ->
-            [trace_id_to_binary(TraceID), span_id_to_binary(SpanID), TraceFlags]
-    end.
-
-restore_otel_stub(Ctx, [TraceID, SpanID, TraceFlags]) ->
-    SpanCtx = otel_tracer:from_remote_span(binary_to_id(TraceID), binary_to_id(SpanID), TraceFlags),
-    otel_tracer:set_current_span(Ctx, SpanCtx);
-restore_otel_stub(Ctx, _Other) ->
-    Ctx.
-
-trace_id_to_binary(TraceID) ->
-    {ok, EncodedTraceID} = otel_utils:format_binary_string("~32.16.0b", [TraceID]),
-    EncodedTraceID.
-
-span_id_to_binary(SpanID) ->
-    {ok, EncodedSpanID} = otel_utils:format_binary_string("~16.16.0b", [SpanID]),
-    EncodedSpanID.
-
-binary_to_id(Opaque) when is_binary(Opaque) ->
-    binary_to_integer(Opaque, 16).
 
 process_tags(Namespace, ID) ->
     #{
         <<"progressor.process.ns">> => Namespace,
         <<"progressor.process.id">> => ID
     }.
-
-%% Term encoding/decoding
-
-encode(args, V) ->
-    encode(term, V);
-encode(context, V) ->
-    encode(term, V);
-encode(aux_state, V) ->
-    encode(term, V);
-encode(term, undefined) ->
-    undefined;
-encode(term, V) ->
-    erlang:term_to_binary(V).
-
-decode(args, V) ->
-    decode(term, V);
-decode(context, V) ->
-    decode(term, V);
-decode(aux_state, V) ->
-    decode(term, V);
-decode(term, undefined) ->
-    undefined;
-decode(term, V) ->
-    erlang:binary_to_term(V).
 
 %% Marshalling
 
@@ -420,7 +344,7 @@ marshal({event_bodies, Schema, SContext}, {LatestID, Events}) ->
                 event_id => ID,
                 timestamp => genlib_time:now(),
                 metadata => #{<<"format">> => Version},
-                payload => encode(term, Event)
+                payload => machinery_utils:encode(term, Event)
             }
         end,
         lists:zip(lists:seq(LatestID + 1, LatestID + erlang:length(Events)), Events)
@@ -437,7 +361,7 @@ unmarshal({event, Schema, Context0}, V) ->
     Metadata = maps:get(metadata, V, #{}),
     Version = maps:get(<<"format">>, Metadata, 0),
     Payload0 = maps:get(payload, V),
-    Payload1 = decode(term, Payload0),
+    Payload1 = machinery_utils:decode(term, Payload0),
     DateTime = calendar:system_time_to_universal_time(maps:get(timestamp, V), 1),
     CreatedAt = {DateTime, 0},
     Context1 = Context0#{created_at => CreatedAt},
