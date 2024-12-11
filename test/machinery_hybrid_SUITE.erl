@@ -16,12 +16,19 @@
 
 %% Tests
 
--export([ordinary_call_test/1]).
--export([notfound_call_test/1]).
--export([unknown_namespace_call_test/1]).
--export([ranged_call_test/1]).
--export([failed_call_test/1]).
--export([remove_call_test/1]).
+-export([start_notfound_test/1]).
+-export([get_notfound_test/1]).
+-export([call_notfound_test/1]).
+-export([notify_notfound_test/1]).
+-export([repair_notfound_test/1]).
+
+-export([start_existing_test/1]).
+-export([get_existing_test/1]).
+-export([call_existing_test/1]).
+-export([notify_existing_test/1]).
+-export([repair_existing_test/1]).
+
+-export([timeout_independent_test/1]).
 
 %% Machinery callbacks
 
@@ -38,23 +45,33 @@
 -type group_name() :: ct_helper:group_name().
 -type test_return() :: _ | no_return().
 
+-define(HYBRID, machinery_hybrid_backend).
+-define(PRIMARY, machinery_prg_backend).
+-define(FALLBACK, machinery_mg_backend).
+
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        {group, machinery_hybrid_backend}
+        {group, ?HYBRID}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name() | {group, group_name()}]}].
 groups() ->
     [
-        {machinery_hybrid_backend, [], [{group, all_wo_ranged}]},
-        {all_wo_ranged, [parallel], [
-            ordinary_call_test,
-            notfound_call_test,
-            unknown_namespace_call_test,
-            %% ranged_call_test,
-            failed_call_test,
-            remove_call_test
+        {?HYBRID, [parallel], [
+            start_notfound_test,
+            get_notfound_test,
+            call_notfound_test,
+            notify_notfound_test,
+            repair_notfound_test,
+
+            start_existing_test,
+            get_existing_test,
+            call_existing_test,
+            notify_existing_test,
+            repair_existing_test,
+
+            timeout_independent_test
         ]}
     ].
 
@@ -69,7 +86,7 @@ end_per_suite(C) ->
     ok.
 
 -spec init_per_group(group_name(), config()) -> config().
-init_per_group(machinery_hybrid_backend = Name, C0) ->
+init_per_group(?HYBRID = Name, C0) ->
     C1 = [{backend, Name}, {group_sup, ct_sup:start()} | C0],
     {ok, _Pid} = start_backend(C1),
     {NewApps, _} = ct_helper:start_apps([
@@ -81,7 +98,7 @@ init_per_group(_Name, C) ->
     C.
 
 -spec end_per_group(group_name(), config()) -> config().
-end_per_group(machinery_hybrid_backend, C) ->
+end_per_group(?HYBRID, C) ->
     ok = ct_sup:stop(?config(group_sup, C)),
     ok = ct_helper:stop_apps([progressor]),
     %% ok = progressor:cleanup(#{ns => namespace()}),
@@ -95,62 +112,93 @@ init_per_testcase(TestCaseName, C) ->
 
 %% Tests
 
-%% Сценарии для покрытия при использовании гибридного бекенда:
-%%
-%% 1. Новая машина должна появлятья только в новом бекенде. В старом
-%% -- нет, соответственно как и в вызовах к старому бекенду.
-%%
-%% 2. При старте (start), чтении (get), вызове (call), уведомлении
-%% (notify) и починке (repair) машины не найденной в новом бекенде, но
-%% найденной в старом, должно происходить копирование машины в новый
-%% бекенд с последующим обслуживанием соответствующего вызова уже
-%% через него.
-%%
-%% 3. Любое обращение к машине не существующей ни в одном из бекендов
-%% должно обслуживаться как не найденная машина. То есть все остальные
-%% случае не рассмотренные в п.2.
-%%
-%% 4. Сигнал от таймера должен отправляется новым и старым бекендом
-%% независимо, при условии существования машины для сигнала в
-%% соответствующем бекенде. В случае МГ диспетчиризация таймаутов
-%% настраивается отдельно в конфиге приложения.
-%%
-
--spec ordinary_call_test(config()) -> test_return().
-ordinary_call_test(C) ->
+-spec start_notfound_test(config()) -> test_return().
+start_notfound_test(C) ->
     ID = unique(),
-    ?assertEqual(ok, start(ID, init_numbers, C)),
-    ?assertEqual({ok, done}, call(ID, do_something, C)).
+    ?assertEqual(ok, start(ID, init_numbers, ?HYBRID, C)),
+    ?assertEqual({error, exists}, start(ID, init_numbers, ?PRIMARY, C)),
+    ?assertEqual(ok, start(ID, init_numbers, ?FALLBACK, C)).
 
--spec notfound_call_test(config()) -> test_return().
-notfound_call_test(C) ->
+-spec get_notfound_test(config()) -> test_return().
+get_notfound_test(C) ->
     ID = unique(),
-    ?assertEqual({error, notfound}, call(ID, do_something, C)).
+    [
+        ?assertMatch({error, notfound}, get(ID, B, C))
+     || B <- [?PRIMARY, ?FALLBACK, ?HYBRID]
+    ].
 
--spec unknown_namespace_call_test(config()) -> test_return().
-unknown_namespace_call_test(C) ->
+-spec call_notfound_test(config()) -> test_return().
+call_notfound_test(C) ->
     ID = unique(),
-    ?assertError({namespace_not_found, mmm}, machinery:call(mmm, ID, do_something, get_backend(C))).
+    [
+        ?assertMatch({error, notfound}, call(ID, do_something, B, C))
+     || B <- [?PRIMARY, ?FALLBACK, ?HYBRID]
+    ].
 
--spec ranged_call_test(config()) -> test_return().
-ranged_call_test(C) ->
+-spec notify_notfound_test(config()) -> test_return().
+notify_notfound_test(C) ->
     ID = unique(),
-    ?assertEqual(ok, start(ID, init_numbers, C)),
-    ?assertEqual({ok, lists:seq(9, 1, -1)}, call(ID, get_events, {10, 9, backward}, C)),
-    ?assertEqual({ok, lists:seq(3, 11)}, call(ID, get_events, {2, 9, forward}, C)).
+    [
+        ?assertMatch({error, notfound}, notify(ID, do_something, B, C))
+     || B <- [?PRIMARY, ?FALLBACK, ?HYBRID]
+    ].
 
--spec failed_call_test(config()) -> test_return().
-failed_call_test(C) ->
+-spec repair_notfound_test(config()) -> test_return().
+repair_notfound_test(C) ->
     ID = unique(),
-    ?assertEqual(ok, start(ID, init_numbers, C)),
-    ?assertError({failed, general, ID}, call(ID, fail, C)).
+    [
+        ?assertMatch({error, notfound}, repair(ID, simple, B, C))
+     || B <- [?PRIMARY, ?FALLBACK, ?HYBRID]
+    ].
 
--spec remove_call_test(config()) -> test_return().
-remove_call_test(C) ->
+-spec start_existing_test(config()) -> test_return().
+start_existing_test(C) ->
+    ID = existing_only_in_fallback_backend(C),
+    ?assertMatch({error, notfound}, get(ID, ?PRIMARY, C)),
+    ?assertEqual({error, exists}, start(ID, init_numbers, ?HYBRID, C)),
+    ?assertMatch({ok, #{}}, get(ID, ?PRIMARY, C)).
+
+-spec get_existing_test(config()) -> test_return().
+get_existing_test(C) ->
+    ID = existing_only_in_fallback_backend(C),
+    ?assertMatch({error, notfound}, get(ID, ?PRIMARY, C)),
+    ?assertMatch({ok, #{}}, get(ID, ?HYBRID, C)),
+    ?assertMatch({ok, #{}}, get(ID, ?PRIMARY, C)).
+
+-spec call_existing_test(config()) -> test_return().
+call_existing_test(C) ->
+    ID = existing_only_in_fallback_backend(C),
+    ?assertMatch({error, notfound}, get(ID, ?PRIMARY, C)),
+    ?assertMatch({ok, done}, call(ID, do_something, ?HYBRID, C)),
+    ?assertMatch({ok, #{}}, get(ID, ?PRIMARY, C)).
+
+-spec notify_existing_test(config()) -> test_return().
+notify_existing_test(C) ->
+    ID = existing_only_in_fallback_backend(C),
+    ?assertMatch({error, notfound}, get(ID, ?PRIMARY, C)),
+    ?assertEqual(ok, notify(ID, do_something, ?HYBRID, C)),
+    %% NOTE Maybe tweak timer or refactor into event occurrence await helper
+    _ = timer:sleep(1000),
+    {ok, #{history := History}} = get(ID, ?PRIMARY, C),
+    ?assertMatch([{_, _, something} | _], lists:reverse(History)).
+
+-spec repair_existing_test(config()) -> test_return().
+repair_existing_test(C) ->
+    ID = existing_only_in_fallback_backend(C),
+    ?assertMatch({error, notfound}, get(ID, ?PRIMARY, C)),
+    ?assertError({failed, general, ID}, call(ID, fail, ?FALLBACK, C)),
+    ?assertEqual({ok, done}, repair(ID, simple, ?HYBRID, C)),
+    ?assertEqual({ok, lists:seq(1, 100)}, call(ID, get_events, ?PRIMARY, C)).
+
+-spec timeout_independent_test(config()) -> test_return().
+timeout_independent_test(C) ->
     ID = unique(),
-    ?assertEqual(ok, start(ID, init_numbers, C)),
-    ?assertEqual({ok, removed}, call(ID, remove, C)),
-    ?assertEqual({error, notfound}, call(ID, do_something, C)).
+    ?assertEqual(ok, start(ID, init_timer, ?FALLBACK, C)),
+    ?assertEqual(ok, start(ID, init_timer, ?PRIMARY, C)),
+    timer:sleep(timer:seconds(5)),
+    Expected = lists:seq(1, 10),
+    ?assertMatch({ok, #{aux_state := Expected}}, get(ID, ?FALLBACK, C)),
+    ?assertMatch({ok, #{aux_state := Expected}}, get(ID, ?PRIMARY, C)).
 
 %% Machinery handler
 
@@ -160,16 +208,28 @@ remove_call_test(C) ->
 -type handler_opts() :: machinery:handler_opts(_).
 -type result() :: machinery:result(event(), aux_st()).
 -type response() :: machinery:response(_).
+-type error() :: machinery:error(_).
 
 -spec init(_Args, machine(), undefined, handler_opts()) -> result().
+init(init_timer, _Machine, _, _Opts) ->
+    #{
+        events => lists:seq(1, 10),
+        action => {set_timer, {timeout, 0}}
+    };
 init(init_numbers, _Machine, _, _Opts) ->
     #{
         events => lists:seq(1, 100)
     }.
 
--spec process_timeout(machine(), undefined, handler_opts()) -> no_return().
-process_timeout(#{}, _, _Opts) ->
-    erlang:error({not_implemented, process_timeout}).
+-spec process_timeout(machine(), undefined, handler_opts()) -> result().
+process_timeout(#{history := History}, _, _Opts) ->
+    Bodies = lists:map(fun({_ID, _CreatedAt, Body}) -> Body end, History),
+    #{
+        events => [timer_fired],
+        % why not
+        action => unset_timer,
+        aux_state => Bodies
+    }.
 
 -spec process_call(_Args, machine(), undefined, handler_opts()) -> {response(), result()}.
 process_call(do_something, _Machine, _, _Opts) ->
@@ -185,24 +245,71 @@ process_call(remove, _Machine, _, _Opts) ->
 process_call(fail, _Machine, _, _Opts) ->
     erlang:error(fail).
 
--spec process_repair(_Args, machine(), undefined, handler_opts()) -> no_return().
-process_repair(_Args, _Machine, _, _Opts) ->
-    erlang:error({not_implemented, process_repair}).
+-spec process_repair(_Args, machine(), undefined, handler_opts()) -> {ok, {response(), result()}} | {error, error()}.
+process_repair(simple, _Machine, _, _Opts) ->
+    {ok, {done, #{}}};
+process_repair({add_events, Events}, _Machine, _, _Opts) ->
+    {ok, {done, #{events => Events}}};
+process_repair(count_events, #{history := History}, _, _Opts) ->
+    {ok, {done, #{events => [{count_events, erlang:length(History)}]}}};
+process_repair(fail, _Machine, _, _Opts) ->
+    {error, fail};
+process_repair(unexpected_fail, _Machine, _, _Opts) ->
+    erlang:error(unexpected_fail).
 
--spec process_notification(_, machine(), undefined, handler_opts()) -> no_return().
-process_notification(_Args, _Machine, _, _Opts) ->
-    erlang:error({not_implemented, process_notification}).
+-spec process_notification(_Args, machine(), undefined, handler_opts()) -> result().
+process_notification(do_something, _Machine, _, _Opts) ->
+    #{
+        events => [something]
+    };
+process_notification(sum_numbers, #{history := History}, _, _Opts) ->
+    EventsSum = lists:foldr(
+        fun
+            ({_, _, Num}, Acc) when is_number(Num) ->
+                Num + Acc;
+            ({_, _, _}, Acc) ->
+                Acc
+        end,
+        0,
+        History
+    ),
+    #{
+        events => [{sum, EventsSum}]
+    }.
 
 %% Helpers
 
-start(ID, Args, C) ->
-    machinery:start(namespace(), ID, Args, get_backend(C)).
+existing_only_in_fallback_backend(C) ->
+    ID = unique(),
+    ok = start(ID, init_numbers, ?FALLBACK, C),
+    ID.
 
-call(ID, Args, C) ->
-    machinery:call(namespace(), ID, Args, get_backend(C)).
+start(ID, Args, Backend, C) ->
+    machinery:start(namespace(), ID, Args, get_backend(Backend, C)).
 
-call(ID, Args, Range, C) ->
-    machinery:call(namespace(), ID, Range, Args, get_backend(C)).
+get(ID, Backend, C) ->
+    machinery:get(namespace(), ID, get_backend(Backend, C)).
+
+call(ID, Args, Backend, C) ->
+    machinery:call(namespace(), ID, Args, get_backend(Backend, C)).
+
+%% TODO Tests w/ range
+%% call(ID, Args, Range, Backend, C) ->
+%%     machinery:call(namespace(), ID, Range, Args, get_backend(Backend, C)).
+
+notify(ID, Args, Backend, C) ->
+    machinery:notify(namespace(), ID, Args, get_backend(Backend, C)).
+
+%% TODO Tests w/ range
+%% notify(ID, Args, Range, Backend, C) ->
+%%     machinery:notify(namespace(), ID, Range, Args, get_backend(Backend, C)).
+
+repair(ID, Args, Backend, C) ->
+    machinery:repair(namespace(), ID, Args, get_backend(Backend, C)).
+
+%% TODO Tests w/ range
+%% repair(ID, Args, Range, Backend, C) ->
+%%     machinery:repair(namespace(), ID, Range, Args, get_backend(Backend, C)).
 
 namespace() ->
     general.
@@ -218,19 +325,17 @@ unique() ->
     genlib:unique().
 
 start_backend(C) ->
-    {ok, _PID} = supervisor:start_child(
+    {ok, _Pid} = supervisor:start_child(
         ?config(group_sup, C),
         child_spec(C)
     ).
 
 -spec child_spec(config()) -> supervisor:child_spec().
 child_spec(C) ->
-    child_spec(?config(backend, C), C).
+    child_spec(?FALLBACK, C).
 
 -spec child_spec(atom(), config()) -> supervisor:child_spec().
-child_spec(machinery_hybrid_backend, C) ->
-    child_spec(machinery_mg_backend, C);
-child_spec(machinery_mg_backend, _C) ->
+child_spec(?FALLBACK, _C) ->
     BackendConfig = #{
         path => <<"/v1/stateproc">>,
         backend_config => #{
@@ -246,14 +351,10 @@ child_spec(machinery_mg_backend, _C) ->
         ip => {0, 0, 0, 0},
         port => 8022
     },
-    machinery_utils:woody_child_spec(machinery_mg_backend, Routes, ServerConfig).
-
--spec get_backend(config()) -> machinery_mg_backend:backend().
-get_backend(C) ->
-    get_backend(?config(backend, C), C).
+    machinery_utils:woody_child_spec(?FALLBACK, Routes, ServerConfig).
 
 -spec get_backend(atom(), config()) -> machinery_mg_backend:backend().
-get_backend(machinery_hybrid_backend, C) ->
+get_backend(?HYBRID, C) ->
     machinery_hybrid_backend:new(ct_helper:get_woody_ctx(C), backend_opts(), #{
         client => #{
             url => <<"http://machinegun:8022/v1/automaton">>,
@@ -261,7 +362,7 @@ get_backend(machinery_hybrid_backend, C) ->
         },
         schema => machinery_mg_schema_generic
     });
-get_backend(machinery_mg_backend, C) ->
+get_backend(?FALLBACK, C) ->
     machinery_mg_backend:new(
         ct_helper:get_woody_ctx(C),
         #{
@@ -272,5 +373,5 @@ get_backend(machinery_mg_backend, C) ->
             schema => machinery_mg_schema_generic
         }
     );
-get_backend(machinery_prg_backend, C) ->
+get_backend(?PRIMARY, C) ->
     machinery_prg_backend:new(ct_helper:get_woody_ctx(C), backend_opts()).
