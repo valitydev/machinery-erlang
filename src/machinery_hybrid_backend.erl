@@ -90,7 +90,9 @@ maybe_migrate_machine(NS, ID, Opts) ->
     case call_backend(fallback_backend, get, [NS, ID, {undefined, undefined, forward}], Opts) of
         {error, notfound} ->
             ok;
-        {ok, #{history := History, aux_state := AuxState, timer := TimestampSec, status := SimpleStatus}} ->
+        {ok, #{history := History, aux_state := AuxState} = Machine} ->
+            TimestampSec = maps:get(timer, Machine, undefined),
+            SimpleStatus = maps:get(status, Machine, undefined),
             %% TODO Read events by limited batches to construct complete history
             migrate_machine(NS, ID, History, AuxState, TimestampSec, SimpleStatus, Opts)
     end.
@@ -139,7 +141,6 @@ migrate_machine(NS, ID, History, AuxState, TimestampSec, SimpleStatus, Opts) ->
         args => #{
             process => #{
                 process_id => ID,
-                %% We don't know if it is failed
                 status => Status,
                 aux_state => machinery_utils:encode(aux_state, AuxState),
                 %% TODO Maybe add aux_state format info
