@@ -26,17 +26,18 @@
     schema := machinery_mg_schema:schema()
 ).
 
--type backend_opts() :: #{
+-type backend_opts_static() :: #{
     ?BACKEND_CORE_OPTS
 }.
 
 -export_type([backend_opts/0]).
+-export_type([backend_opts_static/0]).
 
--type ctx_opts() :: #{
+-type backend_opts() :: machinery:backend_opts(#{
     ?BACKEND_CORE_OPTS,
     woody_ctx := woody_context:ctx(),
     otel_ctx => otel_ctx:t()
-}.
+}).
 
 -ifdef(WITH_OTEL).
 -define(WITH_OTEL_SPAN(N, O, F), ?with_span(N, O, F)).
@@ -49,11 +50,11 @@
 end).
 -endif.
 
--spec new(woody_context:ctx(), backend_opts()) -> machinery:backend(ctx_opts()).
-new(WoodyCtx, CtxOpts) ->
-    {?MODULE, CtxOpts#{woody_ctx => WoodyCtx}}.
+-spec new(woody_context:ctx(), backend_opts_static()) -> machinery:backend(backend_opts()).
+new(WoodyCtx, Opts) ->
+    {?MODULE, Opts#{woody_ctx => WoodyCtx}}.
 
--spec start(machinery:namespace(), machinery:id(), machinery:args(_), ctx_opts()) -> ok | {error, exists}.
+-spec start(machinery:namespace(), machinery:id(), machinery:args(_), backend_opts()) -> ok | {error, exists}.
 start(NS, ID, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
     ?WITH_OTEL_SPAN(<<"start process">>, SpanOpts, fun(_SpanCtx) ->
@@ -69,7 +70,7 @@ start(NS, ID, Args, CtxOpts) ->
         end
     end).
 
--spec call(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
+-spec call(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
     {ok, machinery:response(_)} | {error, notfound}.
 call(NS, ID, _Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
@@ -94,7 +95,7 @@ call(NS, ID, _Range, Args, CtxOpts) ->
         end
     end).
 
--spec repair(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
+-spec repair(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
     {ok, machinery:response(_)} | {error, {failed, machinery:error(_)} | notfound | working}.
 repair(NS, ID, _Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
@@ -120,7 +121,7 @@ repair(NS, ID, _Range, Args, CtxOpts) ->
         end
     end).
 
--spec get(machinery:namespace(), machinery:id(), machinery:range(), ctx_opts()) ->
+-spec get(machinery:namespace(), machinery:id(), machinery:range(), backend_opts()) ->
     {ok, machinery:machine(_, _)} | {error, notfound}.
 get(NS, ID, Range, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
@@ -137,7 +138,7 @@ get(NS, ID, Range, CtxOpts) ->
         end
     end).
 
--spec notify(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), ctx_opts()) ->
+-spec notify(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
     ok | {error, notfound} | no_return().
 notify(NS, ID, Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},

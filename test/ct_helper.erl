@@ -154,7 +154,7 @@ construct_rpc_id(TestCaseName) ->
 get_woody_ctx(C) ->
     cfg('$woody_ctx', C).
 
--spec construct_progressor_config(machinery_prg_backend:backend_opts()) -> {atom(), term()}.
+-spec construct_progressor_config(machinery_prg_backend:backend_opts_static()) -> {atom(), term()}.
 construct_progressor_config(BackendOpts) ->
     Namespace = maps:get(namespace, BackendOpts),
     {progressor, [
