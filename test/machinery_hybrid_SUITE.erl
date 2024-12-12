@@ -211,10 +211,7 @@ concurrent_start_with_migration_test(C) ->
         start(ID, init_numbers, ?HYBRID, C)
     end),
     ok = start_actors(Pids),
-    ok = await_actors(Pids, fun
-        (ok) -> ok;
-        ({error, exists}) -> ok
-    end),
+    ok = await_actors(Pids, fun({error, exists}) -> ok end),
     ?assertEqual({error, exists}, start(ID, init_numbers, ?HYBRID, C)).
 
 -spec concurrent_call_with_migration_test(config()) -> test_return().
