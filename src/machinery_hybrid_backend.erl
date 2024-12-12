@@ -74,10 +74,31 @@ notify(NS, ID, Range, Args, Opts) ->
 %%
 
 call_backend_and_maybe_migrate(NS, ID, Function, ArgsWithoutOpts, ThisBackendOpts) ->
-    case call_backend(primary_backend, Function, ArgsWithoutOpts, ThisBackendOpts) of
+    try_call_backend(NS, ID, ThisBackendOpts, fun() ->
+        call_backend(primary_backend, Function, ArgsWithoutOpts, ThisBackendOpts)
+    end).
+
+try_call_backend(NS, ID, ThisBackendOpts, Fun) ->
+    case Fun() of
         {error, notfound} ->
-            ok = maybe_migrate_machine(NS, ID, ThisBackendOpts),
-            call_backend(primary_backend, Function, ArgsWithoutOpts, ThisBackendOpts);
+            maybe_retry_call_backend(maybe_migrate_machine(NS, ID, ThisBackendOpts), Fun);
+        Result ->
+            Result
+    end.
+
+maybe_retry_call_backend(ok, Fun) ->
+    %% Sucessfully migrated, try calling backend again.
+    Fun();
+maybe_retry_call_backend({error, notfound} = Error, _Fun) ->
+    %% Process/machine does not exist in fallback backend, nothing to
+    %% migrate nor call to.
+    Error;
+maybe_retry_call_backend({error, {migration_failed, _} = Error}, Fun) ->
+    case Fun() of
+        {error, notfound} ->
+            %% Raise original error exception dispatched by underlying
+            %% progressor process migrator.
+            erlang:error(Error);
         Result ->
             Result
     end.
@@ -88,14 +109,16 @@ call_backend(WhichBackend, Function, ArgsWithoutOpts, ThisBackendOpts) ->
 
 maybe_migrate_machine(NS, ID, Opts) ->
     case call_backend(fallback_backend, get, [NS, ID, {undefined, undefined, forward}], Opts) of
-        {error, notfound} ->
-            ok;
+        {error, notfound} = Error ->
+            Error;
         {ok, #{history := History, aux_state := AuxState} = Machine} ->
             TimestampSec = maps:get(timer, Machine, undefined),
             SimpleStatus = maps:get(status, Machine, undefined),
             %% TODO Read events by limited batches to construct complete history
             migrate_machine(NS, ID, History, AuxState, TimestampSec, SimpleStatus, Opts)
     end.
+
+-define(PROCESS_EXISTS, <<"process already exists">>).
 
 %% FIXME Refactor into smaller funcs
 migrate_machine(NS, ID, History, AuxState, TimestampSec, SimpleStatus, Opts) ->
@@ -156,7 +179,9 @@ migrate_machine(NS, ID, History, AuxState, TimestampSec, SimpleStatus, Opts) ->
     case progressor:put(Req) of
         {ok, _Result} ->
             ok;
+        {error, ?PROCESS_EXISTS} ->
+            %% NOTE This means that process has been concurrently migrated
+            ok;
         {error, Reason} ->
-            %% TODO Add proper error to handle somewhere upward
-            erlang:error({machine_migration_failed, Reason})
+            {error, {migration_failed, Reason}}
     end.

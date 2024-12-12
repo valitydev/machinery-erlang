@@ -29,6 +29,8 @@
 -export([repair_existing_test/1]).
 
 -export([timeout_independent_test/1]).
+-export([concurrent_start_with_migration_test/1]).
+-export([concurrent_call_with_migration_test/1]).
 
 %% Machinery callbacks
 
@@ -71,7 +73,9 @@ groups() ->
             notify_existing_test,
             repair_existing_test,
 
-            timeout_independent_test
+            timeout_independent_test,
+            concurrent_start_with_migration_test,
+            concurrent_call_with_migration_test
         ]}
     ].
 
@@ -200,6 +204,29 @@ timeout_independent_test(C) ->
     ?assertMatch({ok, #{aux_state := Expected}}, get(ID, ?FALLBACK, C)),
     ?assertMatch({ok, #{aux_state := Expected}}, get(ID, ?PRIMARY, C)).
 
+-spec concurrent_start_with_migration_test(config()) -> test_return().
+concurrent_start_with_migration_test(C) ->
+    ID = existing_only_in_fallback_backend(C),
+    Pids = stage_actors(10, fun() ->
+        start(ID, init_numbers, ?HYBRID, C)
+    end),
+    ok = start_actors(Pids),
+    ok = await_actors(Pids, fun
+        (ok) -> ok;
+        ({error, exists}) -> ok
+    end),
+    ?assertEqual({error, exists}, start(ID, init_numbers, ?HYBRID, C)).
+
+-spec concurrent_call_with_migration_test(config()) -> test_return().
+concurrent_call_with_migration_test(C) ->
+    ID = existing_only_in_fallback_backend(C),
+    Pids = stage_actors(10, fun() ->
+        call(ID, do_something, ?HYBRID, C)
+    end),
+    ok = start_actors(Pids),
+    ok = await_actors(Pids, fun({ok, done}) -> ok end),
+    ?assertMatch({ok, done}, call(ID, do_something, ?HYBRID, C)).
+
 %% Machinery handler
 
 -type event() :: any().
@@ -278,6 +305,33 @@ process_notification(sum_numbers, #{history := History}, _, _Opts) ->
     }.
 
 %% Helpers
+
+stage_actors(Quantity, Fun) when Quantity > 0 ->
+    [
+        spawn(fun() ->
+            receive
+                {start, From} ->
+                    From ! {result, self(), Fun()}
+            end
+        end)
+     || _I <- lists:seq(1, Quantity)
+    ].
+
+start_actors(Pids) ->
+    lists:foreach(fun(Pid) -> Pid ! {start, self()} end, Pids).
+
+await_actors(Pids, MatchFun) ->
+    lists:foreach(
+        fun(Pid) ->
+            receive
+                {result, Pid, Result} ->
+                    MatchFun(Result)
+            after 5_000 ->
+                erlang:error(timeout)
+            end
+        end,
+        Pids
+    ).
 
 existing_only_in_fallback_backend(C) ->
     ID = unique(),
