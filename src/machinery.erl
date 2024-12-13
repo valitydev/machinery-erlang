@@ -34,9 +34,9 @@
     namespace := namespace(),
     id := id(),
     history := history(E),
-    aux_state := aux_state(A)
+    aux_state := aux_state(A),
+    range => range()
     %% TODO
-    %% history_range ?
     %% timer ?
 }.
 

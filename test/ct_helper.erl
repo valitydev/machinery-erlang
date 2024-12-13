@@ -11,6 +11,7 @@
 
 -export([woody_ctx/0]).
 -export([get_woody_ctx/1]).
+-export([construct_progressor_config/1]).
 
 -export([test_case_name/1]).
 -export([get_test_case_name/1]).
@@ -38,7 +39,7 @@ cfg(Key, Config) ->
 -type app_env() :: [{atom(), term()}].
 -type startup_ctx() :: #{atom() => _}.
 
--spec start_apps([app_name()]) -> {[Started :: app_name()], startup_ctx()}.
+-spec start_apps([app_name() | {app_name(), app_env()}]) -> {[Started :: app_name()], startup_ctx()}.
 start_apps(AppNames) ->
     lists:foldl(
         fun(AppName, {SAcc, CtxAcc}) ->
@@ -49,7 +50,9 @@ start_apps(AppNames) ->
         AppNames
     ).
 
--spec start_app(app_name()) -> {[Started :: app_name()], startup_ctx()}.
+-spec start_app(app_name() | {app_name(), app_env()}) -> {[Started :: app_name()], startup_ctx()}.
+start_app({AppName, Env}) ->
+    {start_app_with(AppName, Env), #{}};
 start_app(scoper = AppName) ->
     {
         start_app_with(AppName, [
@@ -61,6 +64,27 @@ start_app(woody = AppName) ->
     {
         start_app_with(AppName, [
             {acceptors_pool_size, 4}
+        ]),
+        #{}
+    };
+start_app(epg_connector = AppName) ->
+    {
+        start_app_with(AppName, [
+            {databases, #{
+                default_db => #{
+                    host => "postgres",
+                    port => 5432,
+                    database => "progressor_db",
+                    username => "progressor",
+                    password => "progressor"
+                }
+            }},
+            {pools, #{
+                default_pool => #{
+                    database => default_db,
+                    size => 10
+                }
+            }}
         ]),
         #{}
     };
@@ -129,6 +153,40 @@ construct_rpc_id(TestCaseName) ->
 -spec get_woody_ctx(config()) -> woody_context:ctx().
 get_woody_ctx(C) ->
     cfg('$woody_ctx', C).
+
+-spec construct_progressor_config(machinery_prg_backend:backend_opts()) -> {atom(), term()}.
+construct_progressor_config(BackendOpts) ->
+    Namespace = maps:get(namespace, BackendOpts),
+    {progressor, [
+        {call_wait_timeout, 20},
+        {defaults, #{
+            storage => #{
+                client => prg_pg_backend,
+                options => #{
+                    pool => default_pool
+                }
+            },
+            retry_policy => #{
+                initial_timeout => 5,
+                backoff_coefficient => 1.0,
+                %% seconds
+                max_timeout => 180,
+                max_attempts => 3,
+                non_retryable_errors => []
+            },
+            task_scan_timeout => 1,
+            worker_pool_size => 100,
+            process_step_timeout => 30
+        }},
+        {namespaces, #{
+            Namespace => #{
+                processor => #{
+                    client => machinery_prg_backend,
+                    options => BackendOpts
+                }
+            }
+        }}
+    ]}.
 
 %%
 

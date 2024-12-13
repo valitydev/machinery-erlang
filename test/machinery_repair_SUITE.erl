@@ -43,17 +43,29 @@
 -spec all() -> [test_case_name() | {group, group_name()}].
 all() ->
     [
-        {group, machinery_mg_backend}
+        {group, machinery_mg_backend},
+        {group, machinery_prg_backend}
     ].
 
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
 groups() ->
     [
         {machinery_mg_backend, [], [{group, all}]},
+        {machinery_prg_backend, [], [{group, all_wo_ranged}]},
         {all, [parallel], [
             simple_repair_test,
             complex_repair_test,
             ranged_repair_test,
+            notfound_repair_test,
+            failed_repair_test,
+            unexpected_failed_repair_test,
+            unknown_namespace_repair_test,
+            working_repair_test
+        ]},
+        {all_wo_ranged, [parallel], [
+            simple_repair_test,
+            complex_repair_test,
+            %% ranged_repair_test,
             notfound_repair_test,
             failed_repair_test,
             unexpected_failed_repair_test,
@@ -77,12 +89,28 @@ init_per_group(machinery_mg_backend = Name, C0) ->
     C1 = [{backend, Name}, {group_sup, ct_sup:start()} | C0],
     {ok, _Pid} = start_backend(C1),
     C1;
+init_per_group(machinery_prg_backend = Name, C0) ->
+    %% _ = dbg:tracer(),
+    %% _ = dbg:p(all, c),
+    %% _ = dbg:tpl({'prg_processor', 'process', '_'}, x),
+    %% _ = dbg:tpl({'machinery', 'dispatch_call', '_'}, x),
+    %% _ = dbg:tpl({'machinery_prg_backend', 'marshal_result', '_'}, x),
+    C1 = [{backend, Name} | C0],
+    {NewApps, _} = ct_helper:start_apps([
+        epg_connector,
+        ct_helper:construct_progressor_config(backend_opts())
+    ]),
+    lists:keyreplace(started_apps, 1, C1, {started_apps, ?config(started_apps, C1) ++ NewApps});
 init_per_group(_Name, C) ->
     C.
 
 -spec end_per_group(group_name(), config()) -> config().
 end_per_group(machinery_mg_backend, C) ->
     ok = ct_sup:stop(?config(group_sup, C)),
+    C;
+end_per_group(machinery_prg_backend, C) ->
+    ok = ct_helper:stop_apps([progressor]),
+    %% ok = progressor:cleanup(#{ns => namespace()}),
     C;
 end_per_group(_Name, C) ->
     C.
@@ -211,6 +239,13 @@ repair(ID, Args, Range, C) ->
 namespace() ->
     general.
 
+backend_opts() ->
+    #{
+        namespace => namespace(),
+        handler => ?MODULE,
+        schema => machinery_mg_schema_generic
+    }.
+
 unique() ->
     genlib:unique().
 
@@ -258,4 +293,6 @@ get_backend(machinery_mg_backend, C) ->
             },
             schema => machinery_mg_schema_generic
         }
-    ).
+    );
+get_backend(machinery_prg_backend, C) ->
+    machinery_prg_backend:new(ct_helper:get_woody_ctx(C), backend_opts()).
