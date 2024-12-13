@@ -15,6 +15,13 @@
 -type args(T) :: machinery:args(T).
 -type response(T) :: machinery:response(T).
 -type error(T) :: machinery:error(T).
+%% NOTE This backends may additionally return machine's simple status
+%% and timer target unixtime
+%% #{
+%%     ...,
+%%     timer => pos_integer(),
+%%     status => working | failed
+%% }
 -type machine(E, A) :: machinery:machine(E, A).
 -type logic_handler(T) :: machinery:logic_handler(T).
 
@@ -66,6 +73,7 @@
 -export_type([handler/1]).
 -export_type([handler_opts/0]).
 -export_type([backend_opts/0]).
+-export_type([backend_opts_static/0]).
 -export_type([backend/0]).
 
 %% API
@@ -106,7 +114,7 @@ get_handler({LogicHandler, #{path := Path, backend_config := Config}}) ->
     }}.
 
 -spec new(woody_context:ctx(), backend_opts_static()) -> backend().
-new(WoodyCtx, Opts = #{client := _, schema := _}) ->
+new(WoodyCtx, #{client := _, schema := _} = Opts) ->
     {?MODULE, Opts#{woody_ctx => WoodyCtx}}.
 
 %% Machinery backend
@@ -129,11 +137,11 @@ start(NS, ID, Args, Opts) ->
     end.
 
 -spec call(namespace(), id(), range(), args(_), backend_opts()) -> {ok, response(_)} | {error, notfound}.
-call(NS, Id, Range, Args, Opts) ->
+call(NS, ID, Range, Args, Opts) ->
     Client = get_client(Opts),
     Schema = get_schema(Opts),
-    SContext0 = build_schema_context(NS, Id),
-    Descriptor = {NS, Id, Range},
+    SContext0 = build_schema_context(NS, ID),
+    Descriptor = {NS, ID, Range},
     {CallArgs, SContext1} = marshal({schema, Schema, {args, call}, SContext0}, Args),
     case machinery_mg_client:call(marshal(descriptor, Descriptor), CallArgs, Client) of
         {ok, Response0} ->
@@ -144,16 +152,16 @@ call(NS, Id, Range, Args, Opts) ->
         {exception, #mg_stateproc_NamespaceNotFound{}} ->
             error({namespace_not_found, NS});
         {exception, #mg_stateproc_MachineFailed{}} ->
-            error({failed, NS, Id})
+            error({failed, NS, ID})
     end.
 
 -spec repair(namespace(), id(), range(), args(_), backend_opts()) ->
     {ok, response(_)} | {error, {failed, error(_)} | notfound | working}.
-repair(NS, Id, Range, Args, Opts) ->
+repair(NS, ID, Range, Args, Opts) ->
     Client = get_client(Opts),
     Schema = get_schema(Opts),
-    SContext0 = build_schema_context(NS, Id),
-    Descriptor = {NS, Id, Range},
+    SContext0 = build_schema_context(NS, ID),
+    Descriptor = {NS, ID, Range},
     {RepairArgs, SContext1} = marshal({schema, Schema, {args, repair}, SContext0}, Args),
     case machinery_mg_client:repair(marshal(descriptor, Descriptor), RepairArgs, Client) of
         {ok, Response0} ->
@@ -168,14 +176,14 @@ repair(NS, Id, Range, Args, Opts) ->
         {exception, #mg_stateproc_NamespaceNotFound{}} ->
             error({namespace_not_found, NS});
         {exception, #mg_stateproc_MachineFailed{}} ->
-            error({failed, NS, Id})
+            error({failed, NS, ID})
     end.
 
 -spec get(namespace(), id(), range(), backend_opts()) -> {ok, machine(_, _)} | {error, notfound}.
-get(NS, Id, Range, Opts) ->
+get(NS, ID, Range, Opts) ->
     Client = get_client(Opts),
     Schema = get_schema(Opts),
-    Descriptor = {NS, Id, Range},
+    Descriptor = {NS, ID, Range},
     case machinery_mg_client:get_machine(marshal(descriptor, Descriptor), Client) of
         {ok, Machine0} ->
             {Machine1, _Context} = unmarshal({machine, Schema}, Machine0),
@@ -187,11 +195,11 @@ get(NS, Id, Range, Opts) ->
     end.
 
 -spec notify(namespace(), id(), range(), args(_), backend_opts()) -> ok | {error, notfound} | no_return().
-notify(NS, Id, Range, Args, Opts) ->
+notify(NS, ID, Range, Args, Opts) ->
     Client = get_client(Opts),
     Schema = get_schema(Opts),
-    SContext0 = build_schema_context(NS, Id),
-    Descriptor = {NS, Id, Range},
+    SContext0 = build_schema_context(NS, ID),
+    Descriptor = {NS, ID, Range},
     {NotificationArgs, _SContext1} = marshal({schema, Schema, {args, notification}, SContext0}, Args),
     case machinery_mg_client:notify(marshal(descriptor, Descriptor), NotificationArgs, Client) of
         {ok, _Response0} ->
@@ -292,10 +300,10 @@ set_aux_state(NewState, _) ->
     NewState.
 
 -spec build_schema_context(namespace(), id()) -> machinery_mg_schema:context().
-build_schema_context(NS, Id) ->
+build_schema_context(NS, ID) ->
     #{
         machine_ns => NS,
-        machine_id => Id
+        machine_id => ID
     }.
 
 %% Marshalling
@@ -404,7 +412,9 @@ unmarshal(
         'id' = ID,
         'history' = History,
         'history_range' = Range,
-        'aux_state' = #mg_stateproc_Content{format_version = Version, data = AuxState}
+        'aux_state' = #mg_stateproc_Content{format_version = Version, data = AuxState},
+        'timer' = TimerTimestamp,
+        'status' = SimpleStatus
     }
 ) ->
     ID1 = unmarshal(id, ID),
@@ -416,9 +426,19 @@ unmarshal(
         id => ID1,
         history => unmarshal({history, Schema, Context1}, History),
         range => unmarshal(range, Range),
-        aux_state => AuxState1
+        aux_state => AuxState1,
+        timer => unmarshal(timer, TimerTimestamp),
+        status => unmarshal(status, SimpleStatus)
     },
     {Machine, Context1};
+unmarshal(timer, undefined) ->
+    undefined;
+unmarshal(timer, TimerTimestamp) when is_binary(TimerTimestamp) ->
+    genlib_rfc3339:parse(TimerTimestamp, second);
+unmarshal(status, undefined) ->
+    working;
+unmarshal(status, {SimpleStatus, _}) ->
+    SimpleStatus;
 unmarshal({history, Schema, Context}, V) ->
     unmarshal({list, {event, Schema, Context}}, V);
 unmarshal(
