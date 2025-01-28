@@ -90,6 +90,7 @@
 -export([repair/5]).
 -export([get/4]).
 -export([notify/5]).
+-export([remove/3]).
 
 %% Woody handler
 -behaviour(woody_server_thrift_handler).
@@ -204,6 +205,18 @@ notify(NS, ID, Range, Args, Opts) ->
     case machinery_mg_client:notify(marshal(descriptor, Descriptor), NotificationArgs, Client) of
         {ok, _Response0} ->
             %% Response contains the notification id but it's not like we can do anything with that information
+            ok;
+        {exception, #mg_stateproc_MachineNotFound{}} ->
+            {error, notfound};
+        {exception, #mg_stateproc_NamespaceNotFound{}} ->
+            error({namespace_not_found, NS})
+    end.
+
+-spec remove(namespace(), id(), backend_opts()) -> ok | {error, notfound}.
+remove(NS, ID, Opts) ->
+    Client = get_client(Opts),
+    case machinery_mg_client:remove(marshal(namespace, NS), ID, Client) of
+        {ok, ok} ->
             ok;
         {exception, #mg_stateproc_MachineNotFound{}} ->
             {error, notfound};

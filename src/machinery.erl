@@ -84,6 +84,7 @@
 -export([get/4]).
 -export([notify/4]).
 -export([notify/5]).
+-export([remove/3]).
 
 %% Internal API
 -export([dispatch_signal/4]).
@@ -171,6 +172,11 @@ notify(NS, ID, Args, Backend) ->
 notify(NS, ID, Range, Args, Backend) ->
     {Module, Opts} = machinery_utils:get_backend(Backend),
     machinery_backend:notify(Module, NS, ID, Range, Args, Opts).
+
+-spec remove(namespace(), id(), backend(_)) -> ok | {error, notfound}.
+remove(NS, ID, Backend) ->
+    {Module, Opts} = machinery_utils:get_backend(Backend),
+    machinery_backend:remove(Module, NS, ID, Opts).
 
 %% Internal API
 

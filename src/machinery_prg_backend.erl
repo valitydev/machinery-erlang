@@ -14,6 +14,7 @@
 -export([repair/5]).
 -export([get/4]).
 -export([notify/5]).
+-export([remove/3]).
 
 %% Progressor processor callback
 -export([process/3]).
@@ -70,7 +71,7 @@ start(NS, ID, Args, CtxOpts) ->
         end
     end).
 
--spec call(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
+-spec call(machinery:namespace(), machinery:id(), machinery:range() | undefined, machinery:args(_), backend_opts()) ->
     {ok, machinery:response(_)} | {error, notfound}.
 call(NS, ID, _Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
@@ -157,6 +158,23 @@ notify(NS, ID, Range, Args, CtxOpts) ->
         end
     end).
 
+-spec remove(machinery:namespace(), machinery:id(), backend_opts()) -> ok | {error, notfound}.
+remove(NS, ID, CtxOpts) ->
+    SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
+    ?WITH_OTEL_SPAN(<<"remove process">>, SpanOpts, fun(_SpanCtx) ->
+        %% FIXME Temporary pass remove as sync call
+        try
+            case call(NS, ID, undefined, {remove, #{}}, CtxOpts) of
+                {ok, _} -> ok;
+                R -> R
+            end
+        catch
+            error:{failed, _NS, _ID} ->
+                %% NOTE Not a 'remove' error
+                ok
+        end
+    end).
+
 %%
 
 %% After querying resulting list is expected to be sorted with id
@@ -225,6 +243,14 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
         end
     end).
 
+do_process(remove, _BinArgs, _Process, _Opts, _ProcessCtx) ->
+    %% NOTE Not actually implemented on a client but mocked via 'call'
+    {ok,
+        genlib_map:compact(#{
+            %% TODO Event version?
+            events => [],
+            action => #{remove => true}
+        })};
 do_process(CallType, BinArgs, Process, Opts, ProcessCtx) ->
     Schema = get_schema(Opts),
     NS = get_namespace(Opts),

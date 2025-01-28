@@ -15,6 +15,7 @@
 -export([get_machine/2]).
 -export([modernize/2]).
 -export([notify/3]).
+-export([remove/3]).
 
 -type woody_client() :: #{
     url := woody:url(),
@@ -79,6 +80,10 @@ new(WoodyClient = #{url := _, event_handler := _}, WoodyCtx) ->
     namespace_not_found()
     | machine_not_found().
 
+-type remove_errors() ::
+    namespace_not_found()
+    | machine_not_found().
+
 -spec start(namespace(), id(), args(), client()) ->
     {ok, ok}
     | {exception, start_errors()}.
@@ -114,6 +119,12 @@ modernize(Descriptor, Client) ->
     | {exception, notify_errors()}.
 notify(Descriptor, Args, Client) ->
     issue_call('Notify', [Descriptor, Args], Client).
+
+-spec remove(namespace(), id(), client()) ->
+    {ok, ok}
+    | {exception, remove_errors()}.
+remove(NS, ID, Client) ->
+    issue_call('Remove', [NS, ID], Client).
 
 %% Internal functions
 
