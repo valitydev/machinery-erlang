@@ -76,12 +76,8 @@ notify(NS, ID, Range, Args, Opts) ->
     ok | {error, notfound} | no_return().
 remove(NS, ID, Opts) ->
     %% No need in migration
-    case call_backend(primary_backend, remove, [NS, ID], Opts) of
-        {error, notfound} ->
-            {error, notfound};
-        Result ->
-            Result
-    end.
+    _ = call_backend(fallback_backend, remove, [NS, ID], Opts),
+    call_backend(primary_backend, remove, [NS, ID], Opts).
 
 %%
 
