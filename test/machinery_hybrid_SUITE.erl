@@ -21,12 +21,14 @@
 -export([call_notfound_test/1]).
 -export([notify_notfound_test/1]).
 -export([repair_notfound_test/1]).
+-export([remove_notfound_test/1]).
 
 -export([start_existing_test/1]).
 -export([get_existing_test/1]).
 -export([call_existing_test/1]).
 -export([notify_existing_test/1]).
 -export([repair_existing_test/1]).
+-export([remove_existing_test/1]).
 
 -export([timeout_independent_test/1]).
 -export([concurrent_start_with_migration_test/1]).
@@ -66,12 +68,14 @@ groups() ->
             call_notfound_test,
             notify_notfound_test,
             repair_notfound_test,
+            remove_notfound_test,
 
             start_existing_test,
             get_existing_test,
             call_existing_test,
             notify_existing_test,
             repair_existing_test,
+            remove_existing_test,
 
             timeout_independent_test,
             concurrent_start_with_migration_test,
@@ -155,6 +159,14 @@ repair_notfound_test(C) ->
      || B <- [?PRIMARY, ?FALLBACK, ?HYBRID]
     ].
 
+-spec remove_notfound_test(config()) -> test_return().
+remove_notfound_test(C) ->
+    ID = unique(),
+    [
+        ?assertMatch({error, notfound}, remove(ID, B, C))
+     || B <- [?PRIMARY, ?FALLBACK, ?HYBRID]
+    ].
+
 -spec start_existing_test(config()) -> test_return().
 start_existing_test(C) ->
     ID = existing_only_in_fallback_backend(C),
@@ -193,6 +205,14 @@ repair_existing_test(C) ->
     ?assertError({failed, general, ID}, call(ID, fail, ?FALLBACK, C)),
     ?assertEqual({ok, done}, repair(ID, simple, ?HYBRID, C)),
     ?assertEqual({ok, lists:seq(1, 100)}, call(ID, get_events, ?PRIMARY, C)).
+
+-spec remove_existing_test(config()) -> test_return().
+remove_existing_test(C) ->
+    ID = existing_only_in_fallback_backend(C),
+    ?assertMatch({error, notfound}, get(ID, ?PRIMARY, C)),
+    ?assertMatch({ok, #{}}, get(ID, ?FALLBACK, C)),
+    ?assertEqual({error, notfound}, remove(ID, ?HYBRID, C)),
+    ?assertMatch({error, notfound}, get(ID, ?FALLBACK, C)).
 
 -spec timeout_independent_test(config()) -> test_return().
 timeout_independent_test(C) ->
@@ -361,6 +381,9 @@ repair(ID, Args, Backend, C) ->
 %% TODO Tests w/ range
 %% repair(ID, Args, Range, Backend, C) ->
 %%     machinery:repair(namespace(), ID, Range, Args, get_backend(Backend, C)).
+
+remove(ID, Backend, C) ->
+    machinery:remove(namespace(), ID, get_backend(Backend, C)).
 
 namespace() ->
     general.

@@ -14,6 +14,7 @@
 -export([repair/5]).
 -export([get/4]).
 -export([notify/5]).
+-export([remove/3]).
 
 %% API
 
@@ -70,6 +71,13 @@ get(NS, ID, Range, Opts) ->
     ok | {error, notfound} | no_return().
 notify(NS, ID, Range, Args, Opts) ->
     call_backend_and_maybe_migrate(NS, ID, notify, [NS, ID, Range, Args], Opts).
+
+-spec remove(machinery:namespace(), machinery:id(), backend_opts()) ->
+    ok | {error, notfound} | no_return().
+remove(NS, ID, Opts) ->
+    %% No need in migration
+    _ = call_backend(fallback_backend, remove, [NS, ID], Opts),
+    call_backend(primary_backend, remove, [NS, ID], Opts).
 
 %%
 

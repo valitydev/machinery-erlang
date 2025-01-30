@@ -9,6 +9,7 @@
 -export([repair/6]).
 -export([get/5]).
 -export([notify/6]).
+-export([remove/4]).
 
 %% Behaviour definition
 
@@ -28,6 +29,8 @@
 -callback get(namespace(), id(), range(), backend_opts()) -> {ok, machinery:machine(_, _)} | {error, notfound}.
 
 -callback notify(namespace(), id(), range(), args(), backend_opts()) -> ok | {error, notfound} | no_return().
+
+-callback remove(namespace(), id(), backend_opts()) -> ok | {error, notfound}.
 
 %% API
 
@@ -54,3 +57,7 @@ get(Backend, Namespace, Id, Range, Opts) ->
 -spec notify(backend(), namespace(), id(), range(), args(), backend_opts()) -> ok | {error, notfound} | no_return().
 notify(Backend, Namespace, Id, Range, Args, Opts) ->
     Backend:notify(Namespace, Id, Range, Args, Opts).
+
+-spec remove(backend(), namespace(), id(), backend_opts()) -> ok | {error, notfound}.
+remove(Backend, Namespace, Id, Opts) ->
+    Backend:remove(Namespace, Id, Opts).
