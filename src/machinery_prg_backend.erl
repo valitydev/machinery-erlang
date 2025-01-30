@@ -71,7 +71,7 @@ start(NS, ID, Args, CtxOpts) ->
         end
     end).
 
--spec call(machinery:namespace(), machinery:id(), machinery:range() | undefined, machinery:args(_), backend_opts()) ->
+-spec call(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
     {ok, machinery:response(_)} | {error, notfound}.
 call(NS, ID, _Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
@@ -164,7 +164,7 @@ remove(NS, ID, CtxOpts) ->
     ?WITH_OTEL_SPAN(<<"remove process">>, SpanOpts, fun(_SpanCtx) ->
         %% FIXME Temporary pass remove as sync call
         try
-            case call(NS, ID, undefined, {remove, #{}}, CtxOpts) of
+            case call(NS, ID, {0, 0, forward}, {remove, #{}}, CtxOpts) of
                 {ok, _} -> ok;
                 R -> R
             end
