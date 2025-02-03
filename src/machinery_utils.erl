@@ -68,7 +68,7 @@ woody_child_spec(Id, Routes, Config) ->
     }).
 
 -spec get_woody_routes([handler(_)], get_woody_handler(), route_opts()) -> woody_routes().
-get_woody_routes(Handlers, GetHandler, Opts = #{event_handler := _}) ->
+get_woody_routes(Handlers, GetHandler, #{event_handler := _} = Opts) ->
     woody_server_thrift_http_handler:get_routes(Opts#{
         handlers => [GetHandler(H, Opts) || H <- Handlers]
     }).

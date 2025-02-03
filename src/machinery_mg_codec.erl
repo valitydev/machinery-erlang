@@ -111,8 +111,8 @@ unmarshal(timestamp, V) when is_binary(V) ->
     Str = erlang:binary_to_list(V),
     try
         Micros = calendar:rfc3339_to_system_time(Str, [{unit, microsecond}]),
-        Datetime = calendar:system_time_to_universal_time(Micros, microsecond),
-        {Datetime, Micros rem ?MICROS_PER_SEC}
+        DateTime = calendar:system_time_to_universal_time(Micros, microsecond),
+        {DateTime, Micros rem ?MICROS_PER_SEC}
     catch
         error:Reason ->
             erlang:error(badarg, [timestamp, V, Reason])
