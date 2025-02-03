@@ -31,7 +31,7 @@
 %%
 
 -spec new(woody_client(), woody_context:ctx()) -> client().
-new(WoodyClient = #{url := _, event_handler := _}, WoodyCtx) ->
+new(#{url := _, event_handler := _} = WoodyClient, WoodyCtx) ->
     {WoodyClient, WoodyCtx}.
 
 %%

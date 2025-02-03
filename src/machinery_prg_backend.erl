@@ -194,7 +194,7 @@ range_args({After, Limit, forward}) ->
         limit => Limit
     }).
 
-specify_range(RangeArgs, Machine = #{history := History}) ->
+specify_range(RangeArgs, #{history := History} = Machine) ->
     HistoryLen = erlang:length(History),
     Offset = maps:get(offset, RangeArgs, 0),
     Limit0 = maps:get(limit, RangeArgs, HistoryLen),
@@ -297,7 +297,7 @@ handle_result(Schema, SContext, LatestEventID, {Response, Result}) ->
 handle_result(Schema, SContext, LatestEventID, Result) ->
     {ok, marshal_result(Schema, SContext, LatestEventID, undefined, Result, #{})}.
 
-unmarshal_process(NS, RangeArgs, Process = #{process_id := ID, history := History}, Schema) ->
+unmarshal_process(NS, RangeArgs, #{process_id := ID, history := History} = Process, Schema) ->
     SContext0 = build_schema_context(NS, ID),
     AuxState = maps:get(aux_state, Process, undefined),
     MachineProcess = specify_range(RangeArgs, #{

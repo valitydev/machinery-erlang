@@ -22,9 +22,9 @@
 -define(LOGIC_HANDLER, machinery_machine_unique_tag).
 
 %% API
--spec child_spec(_Id) -> supervisor:child_spec().
-child_spec(Id) ->
-    machinery_utils:woody_child_spec(Id, get_routes(), config(server_opts)).
+-spec child_spec(_ID) -> supervisor:child_spec().
+child_spec(ID) ->
+    machinery_utils:woody_child_spec(ID, get_routes(), config(server_opts)).
 
 -spec tag(namespace(), tag(), id(), opts()) -> ok | {error, {set, id()}}.
 tag(NS, Tag, ID, Opts) ->

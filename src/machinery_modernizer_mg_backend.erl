@@ -94,15 +94,15 @@ get_handler(#{path := Path, backend_config := Config}) ->
     }}.
 
 -spec new(woody_context:ctx(), backend_opts_static()) -> backend().
-new(WoodyCtx, Opts = #{client := _, schema := _}) ->
+new(WoodyCtx, #{client := _, schema := _} = Opts) ->
     {?MODULE, Opts#{woody_ctx => WoodyCtx}}.
 
 %% Machinery backend
 
 -spec modernize(namespace(), id(), range(), backend_opts()) -> ok | {error, notfound}.
-modernize(NS, Id, Range, Opts) ->
+modernize(NS, ID, Range, Opts) ->
     Client = get_client(Opts),
-    Descriptor = {NS, Id, Range},
+    Descriptor = {NS, ID, Range},
     case machinery_mg_client:modernize(marshal(descriptor, Descriptor), Client) of
         {ok, ok} ->
             ok;
@@ -134,7 +134,7 @@ unmarshal_machine_event(Schema, #mg_stateproc_MachineEvent{
     Context = build_schema_context(NS, ID),
     {unmarshal({event, Schema, Context}, Event), Context}.
 
-marshal_event_content(Schema, Version, Context0, _Event = #{data := EventData0}) ->
+marshal_event_content(Schema, Version, Context0, #{data := EventData0} = _Event) ->
     {EventData1, Context0} = marshal({schema, Schema, {event, Version}, Context0}, EventData0),
     #mg_stateproc_Content{
         format_version = maybe_marshal(format_version, Version),
@@ -144,10 +144,10 @@ marshal_event_content(Schema, Version, Context0, _Event = #{data := EventData0})
 get_client(#{client := Client, woody_ctx := WoodyCtx}) ->
     machinery_mg_client:new(Client, WoodyCtx).
 
-build_schema_context(NS, Id) ->
+build_schema_context(NS, ID) ->
     #{
         machine_ns => NS,
-        machine_id => Id
+        machine_id => ID
     }.
 
 %% Marshalling

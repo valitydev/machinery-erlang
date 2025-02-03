@@ -57,11 +57,11 @@ init_per_suite(C) ->
     ]).
 
 start_woody_server(C) ->
-    {ok, PID} = supervisor:start_child(
+    {ok, Pid} = supervisor:start_child(
         cfg(suite_sup, C),
         machinery_machine_unique_tag_mg_example:child_spec(?MODULE)
     ),
-    [{payproc_mg_machine_sup, PID} | C].
+    [{payproc_mg_machine_sup, Pid} | C].
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
@@ -151,5 +151,5 @@ tag_unset_timely(C) ->
 
 %%
 
-pid_to_binary(PID) ->
-    list_to_binary(pid_to_list(PID)).
+pid_to_binary(Pid) ->
+    list_to_binary(pid_to_list(Pid)).
