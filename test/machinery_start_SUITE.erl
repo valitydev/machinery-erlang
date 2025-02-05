@@ -183,7 +183,7 @@ unique() ->
     genlib:unique().
 
 start_backend(C) ->
-    {ok, _PID} = supervisor:start_child(
+    {ok, _Pid} = supervisor:start_child(
         ?config(group_sup, C),
         child_spec(C)
     ).
