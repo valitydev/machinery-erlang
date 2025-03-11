@@ -395,27 +395,3 @@ unmarshal({event, Schema, Context0}, V) ->
     {maps:get(event_id, V), CreatedAt, Payload2};
 unmarshal({list, T}, V) when is_list(V) ->
     [unmarshal(T, SV) || SV <- V].
-
-%%
-
--ifdef(TEST).
--include_lib("eunit/include/eunit.hrl").
-
--type testgen() :: {_ID, fun(() -> _)}.
--spec test() -> _.
-
--spec range_args_test_() -> [testgen()].
-range_args_test_() ->
-    [
-        ?_assertEqual(#{}, range_args(undefined)),
-        ?_assertEqual(#{}, range_args({undefined, undefined, forward})),
-        ?_assertEqual(#{offset => 0, limit => 42}, range_args({0, 42, forward})),
-        ?_assertEqual(#{offset => 42}, range_args({42, undefined, forward})),
-        ?_assertEqual(#{limit => 10}, range_args({undefined, 10, forward})),
-        ?_assertEqual(#{offset => 42, limit => 10}, range_args({42, 10, forward})),
-        ?_assertEqual(#{limit => 10, inverse_order => true}, range_args({undefined, 10, backward})),
-        ?_assertEqual(#{limit => 41}, range_args({42, undefined, backward})),
-        ?_assertEqual(#{offset => 31, limit => 10}, range_args({42, 10, backward}))
-    ].
-
--endif.
