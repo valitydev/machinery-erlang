@@ -62,7 +62,7 @@ groups() ->
             ordinary_call_test,
             notfound_call_test,
             unknown_namespace_call_test,
-            %% ranged_call_test,
+            ranged_call_test,
             failed_call_test,
             remove_call_test
         ]}
@@ -135,6 +135,7 @@ unknown_namespace_call_test(C) ->
 ranged_call_test(C) ->
     ID = unique(),
     ?assertEqual(ok, start(ID, init_numbers, C)),
+    ?assertEqual({ok, done}, call(ID, do_something, {10, 9, backward}, C)),
     ?assertEqual({ok, lists:seq(9, 1, -1)}, call(ID, get_events, {10, 9, backward}, C)),
     ?assertEqual({ok, lists:seq(3, 11)}, call(ID, get_events, {2, 9, forward}, C)).
 

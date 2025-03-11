@@ -73,11 +73,11 @@ start(NS, ID, Args, CtxOpts) ->
 
 -spec call(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
     {ok, machinery:response(_)} | {error, notfound}.
-call(NS, ID, _Range, Args, CtxOpts) ->
+call(NS, ID, Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
     ?WITH_OTEL_SPAN(<<"call process">>, SpanOpts, fun(_SpanCtx) ->
-        %% TODO Add history range support
-        case progressor:call(make_request(NS, ID, Args, CtxOpts)) of
+        RangeArgs = range_args(Range),
+        case progressor:call(make_request(NS, ID, Args, RangeArgs, CtxOpts)) of
             {ok, _Result} = Response ->
                 Response;
             {error, <<"process not found">>} ->
@@ -98,11 +98,11 @@ call(NS, ID, _Range, Args, CtxOpts) ->
 
 -spec repair(machinery:namespace(), machinery:id(), machinery:range(), machinery:args(_), backend_opts()) ->
     {ok, machinery:response(_)} | {error, {failed, machinery:error(_)} | notfound | working}.
-repair(NS, ID, _Range, Args, CtxOpts) ->
+repair(NS, ID, Range, Args, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
     ?WITH_OTEL_SPAN(<<"repair process">>, SpanOpts, fun(_SpanCtx) ->
-        %% TODO Add history range support
-        case progressor:repair(make_request(NS, ID, Args, CtxOpts)) of
+        RangeArgs = range_args(Range),
+        case progressor:repair(make_request(NS, ID, Args, RangeArgs, CtxOpts)) of
             {ok, _Result} = Response ->
                 Response;
             {error, <<"namespace not found">>} ->
@@ -177,21 +177,16 @@ remove(NS, ID, CtxOpts) ->
 
 %%
 
-%% After querying resulting list is expected to be sorted with id
-%% values ascending before returning it as events.
+% After querying resulting list is expected to be sorted with id
+% values ascending before returning it as events.
+
 range_args(undefined) ->
     range_args({undefined, undefined, forward});
-range_args({undefined, Limit, backward}) ->
-    %% TODO Support flag for 'ORDER BY' inversion
-    maps:put(inverse_order, true, range_args({undefined, Limit, forward}));
-range_args({Offset, undefined, backward}) ->
-    #{limit => Offset - 1};
-range_args({After, Limit, backward}) ->
-    range_args({After - Limit - 1, Limit, forward});
-range_args({After, Limit, forward}) ->
+range_args({Offset, Limit, Direction}) ->
     genlib_map:compact(#{
-        offset => After,
-        limit => Limit
+        offset => Offset,
+        limit => Limit,
+        direction => Direction
     }).
 
 specify_range(RangeArgs, #{history := History} = Machine) ->
@@ -199,7 +194,8 @@ specify_range(RangeArgs, #{history := History} = Machine) ->
     Offset = maps:get(offset, RangeArgs, 0),
     Limit0 = maps:get(limit, RangeArgs, HistoryLen),
     Limit1 = erlang:min(Limit0, HistoryLen),
-    Machine#{range => {Offset, Limit1, forward}}.
+    Direction = maps:get(direction, RangeArgs, forward),
+    Machine#{range => {Offset, Limit1, Direction}}.
 
 get_namespace(#{namespace := Namespace}) ->
     Namespace.
@@ -207,13 +203,22 @@ get_namespace(#{namespace := Namespace}) ->
 get_schema(#{schema := Schema}) ->
     Schema.
 
+get_range(Process) ->
+    maps:get(range, Process, #{}).
+
+get_last_event_id(Process) ->
+    maps:get(last_event_id, Process).
+
 make_request(NS, ID, Args, CtxOpts) ->
-    #{
+    make_request(NS, ID, Args, undefined, CtxOpts).
+make_request(NS, ID, Args, Range, CtxOpts) ->
+    genlib_map:compact(#{
         ns => NS,
         id => ID,
+        range => Range,
         args => machinery_utils:encode(args, Args),
         context => machinery_utils:encode(context, machinery_utils:add_otel_context(maps:with([woody_ctx], CtxOpts)))
-    }.
+    }).
 
 build_schema_context(NS, ID) ->
     #{
@@ -254,8 +259,8 @@ do_process(remove, _BinArgs, _Process, _Opts, _ProcessCtx) ->
 do_process(CallType, BinArgs, Process, Opts, ProcessCtx) ->
     Schema = get_schema(Opts),
     NS = get_namespace(Opts),
-    %% TODO Passthrough history range
-    {Machine, SContext} = unmarshal_process(NS, #{}, Process, Schema),
+    Range = get_range(Process),
+    {Machine, SContext} = unmarshal_process(NS, Range, Process, Schema),
     Handler = machinery_utils:expand_modopts(maps:get(handler, Opts), #{}),
     Result =
         case CallType of
@@ -280,13 +285,7 @@ do_process(CallType, BinArgs, Process, Opts, ProcessCtx) ->
                 Args = machinery_utils:decode(args, BinArgs),
                 machinery:dispatch_repair(Args, Machine, Handler, ProcessCtx)
         end,
-    handle_result(Schema, SContext, latest_event_id(Machine), Result).
-
-latest_event_id(#{history := []}) ->
-    0;
-latest_event_id(#{history := History}) ->
-    {LatestEventID, _, _} = lists:last(History),
-    LatestEventID.
+    handle_result(Schema, SContext, get_last_event_id(Process), Result).
 
 handle_result(_Schema, SContext, _LatestEventID, {error, Reason}) ->
     {error, machinery_utils:encode(term, {Reason, SContext})};
