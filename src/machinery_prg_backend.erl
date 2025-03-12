@@ -128,7 +128,7 @@ get(NS, ID, Range, CtxOpts) ->
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
     ?WITH_OTEL_SPAN(<<"get process">>, SpanOpts, fun(_SpanCtx) ->
         RangeArgs = range_args(Range),
-        case progressor:get(make_request(NS, ID, RangeArgs, CtxOpts)) of
+        case progressor:get(make_request(NS, ID, undefined, RangeArgs, CtxOpts)) of
             {ok, Process} ->
                 {Machine, _SContext} = unmarshal_process(NS, RangeArgs, Process, get_schema(CtxOpts)),
                 {ok, Machine};
