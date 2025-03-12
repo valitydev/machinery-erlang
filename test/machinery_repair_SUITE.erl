@@ -65,7 +65,7 @@ groups() ->
         {all_wo_ranged, [parallel], [
             simple_repair_test,
             complex_repair_test,
-            %% ranged_repair_test,
+            ranged_repair_test,
             notfound_repair_test,
             failed_repair_test,
             unexpected_failed_repair_test,
