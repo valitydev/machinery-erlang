@@ -164,7 +164,7 @@ remove(NS, ID, CtxOpts) ->
     ?WITH_OTEL_SPAN(<<"remove process">>, SpanOpts, fun(_SpanCtx) ->
         %% FIXME Temporary pass remove as sync call
         try
-            case call(NS, ID, {0, 0, forward}, {remove, #{}}, CtxOpts) of
+            case call(NS, ID, {0, 0, forward}, remove, CtxOpts) of
                 {ok, _} -> ok;
                 R -> R
             end
@@ -248,14 +248,6 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
         end
     end).
 
-do_process(remove, _BinArgs, _Process, _Opts, _ProcessCtx) ->
-    %% NOTE Not actually implemented on a client but mocked via 'call'
-    {ok,
-        genlib_map:compact(#{
-            %% TODO Event version?
-            events => [],
-            action => #{remove => true}
-        })};
 do_process(CallType, BinArgs, Process, Opts, ProcessCtx) ->
     Schema = get_schema(Opts),
     NS = get_namespace(Opts),
@@ -278,6 +270,13 @@ do_process(CallType, BinArgs, Process, Opts, ProcessCtx) ->
                 case machinery_utils:decode(args, BinArgs) of
                     {notify, Args} ->
                         machinery:dispatch_signal({notification, Args}, Machine, Handler, ProcessCtx);
+                    remove ->
+                        %% NOTE Not actually implemented on a client but mocked via 'call'
+                        {removed,
+                            genlib_map:compact(#{
+                                events => [],
+                                action => remove
+                            })};
                     Args ->
                         machinery:dispatch_call(Args, Machine, Handler, ProcessCtx)
                 end;
