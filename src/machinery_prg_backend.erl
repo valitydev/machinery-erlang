@@ -51,6 +51,8 @@
 end).
 -endif.
 
+-define(PROCESSOR_EXCEPTION(Class, Reason, Stacktrace), {exception, Class, Reason, Stacktrace}).
+
 -spec new(woody_context:ctx(), backend_opts_static()) -> machinery:backend(backend_opts()).
 new(WoodyCtx, Opts) ->
     {?MODULE, Opts#{woody_ctx => WoodyCtx}}.
@@ -66,7 +68,7 @@ start(NS, ID, Args, CtxOpts) ->
                 erlang:error({namespace_not_found, NS});
             {error, <<"process already exists">>} ->
                 {error, exists};
-            {error, {exception, _Class, _Reason}} ->
+            {error, ?PROCESSOR_EXCEPTION(_, _, _)} ->
                 erlang:error({failed, NS, ID})
         end
     end).
@@ -84,7 +86,7 @@ call(NS, ID, Range, Args, CtxOpts) ->
                 {error, notfound};
             {error, <<"namespace not found">>} ->
                 erlang:error({namespace_not_found, NS});
-            {error, {exception, _Class, _Reason}} ->
+            {error, ?PROCESSOR_EXCEPTION(_, _, _)} ->
                 erlang:error({failed, NS, ID});
             %% NOTE Clause for an error from progressor's internal
             %% process status guard
@@ -111,7 +113,7 @@ repair(NS, ID, Range, Args, CtxOpts) ->
                 {error, notfound};
             {error, <<"process is running">>} ->
                 {error, working};
-            {error, {exception, _Class, _Reason}} ->
+            {error, ?PROCESSOR_EXCEPTION(_, _, _)} ->
                 erlang:error({failed, NS, ID});
             %% NOTE Clause for an error from progressor's internal
             %% process status guard
@@ -244,7 +246,7 @@ process({CallType, BinArgs, Process}, Opts, BinCtx) ->
         catch
             Class:Reason:Stacktrace ->
                 _ = ?record_exception(Class, Reason, Stacktrace, process_tags(NS, ID)),
-                {error, {exception, Class, Reason}}
+                {error, ?PROCESSOR_EXCEPTION(Class, Reason, Stacktrace)}
         end
     end).
 
