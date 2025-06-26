@@ -51,7 +51,8 @@
 end).
 -endif.
 
--define(PROCESSOR_EXCEPTION(Class, Reason, Stacktrace), {exception, Class, Reason, Stacktrace}).
+%% NOTE Ignore stacktrace to conform progressor's exception tuple
+-define(PROCESSOR_EXCEPTION(Class, Reason, _Stacktrace), {exception, Class, Reason}).
 
 -spec new(woody_context:ctx(), backend_opts_static()) -> machinery:backend(backend_opts()).
 new(WoodyCtx, Opts) ->
