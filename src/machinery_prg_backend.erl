@@ -220,7 +220,13 @@ make_request(NS, ID, Args, Range, CtxOpts) ->
         id => ID,
         range => Range,
         args => machinery_utils:encode(args, Args),
-        context => machinery_utils:encode(context, machinery_utils:add_otel_context(maps:with([woody_ctx], CtxOpts)))
+        context => machinery_utils:encode(
+            context,
+            woody_rpc_helper:encode_rpc_context(
+                maps:get(woody_ctx, CtxOpts, woody_context:new()),
+                otel_ctx:get_current()
+            )
+        )
     }).
 
 build_schema_context(NS, ID) ->
@@ -237,7 +243,8 @@ build_schema_context(NS, ID) ->
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
     ProcessCtx = machinery_utils:decode(context, BinCtx),
-    ok = machinery_utils:attach_otel_context(ProcessCtx),
+    {_WoodyCtx, OtelCtx} = woody_rpc_helper:decode_rpc_context(ProcessCtx),
+    ok = machinery_utils:attach_otel_context(OtelCtx),
     NS = get_namespace(Opts),
     ID = maps:get(process_id, Process),
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
