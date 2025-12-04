@@ -39,8 +39,6 @@
 -export([encode/2]).
 -export([decode/2]).
 
--export([attach_otel_context/1]).
-
 %% API
 
 -spec get_handler(machinery:modopts(Opts)) -> {module(), Opts}.
@@ -97,24 +95,3 @@ decode(term, undefined) ->
     undefined;
 decode(term, V) ->
     erlang:binary_to_term(V).
-
-%% OTEL
-
--spec attach_otel_context(otel_ctx:t()) -> ok.
-attach_otel_context(OtelContext) when is_map(OtelContext) andalso map_size(OtelContext) =:= 0 ->
-    ok;
-attach_otel_context(OtelContext) when is_map(OtelContext) ->
-    _ = otel_ctx:attach(choose_viable_otel_ctx(OtelContext, otel_ctx:get_current())),
-    ok;
-attach_otel_context(_) ->
-    ok.
-
-%% lowest bit flags if span is sampled
--define(IS_NOT_SAMPLED(SpanCtx), SpanCtx#span_ctx.trace_flags band 2#1 =/= 1).
-
-choose_viable_otel_ctx(NewCtx, CurrentCtx) ->
-    case {otel_tracer:current_span_ctx(NewCtx), otel_tracer:current_span_ctx(CurrentCtx)} of
-        {SpanCtx = #span_ctx{}, #span_ctx{}} when ?IS_NOT_SAMPLED(SpanCtx) -> CurrentCtx;
-        {undefined, #span_ctx{}} -> CurrentCtx;
-        {_, _} -> NewCtx
-    end.

@@ -250,7 +250,7 @@ build_schema_context(NS, ID) ->
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
     {WoodyCtx, OtelCtx} = woody_rpc_helper:decode_rpc_context(machinery_utils:decode(context, BinCtx)),
-    ok = machinery_utils:attach_otel_context(OtelCtx),
+    ok = woody_rpc_helper:attach_otel_context(OtelCtx),
     NS = get_namespace(Opts),
     ID = maps:get(process_id, Process),
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
