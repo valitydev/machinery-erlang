@@ -33,12 +33,19 @@
 
 -export_type([backend_opts/0]).
 -export_type([backend_opts_static/0]).
+-export_type([handler_opts/0]).
 
 -type backend_opts() :: machinery:backend_opts(#{
     ?BACKEND_CORE_OPTS,
     woody_ctx := woody_context:ctx(),
     otel_ctx => otel_ctx:t()
 }).
+
+-type handler_opts() ::
+    machinery:handler_opts(#{
+        woody_ctx := woody_context:ctx(),
+        otel_ctx => otel_ctx:t()
+    }).
 
 -ifdef(WITH_OTEL).
 -define(WITH_OTEL_SPAN(N, O, F), ?with_span(N, O, F)).
@@ -220,7 +227,13 @@ make_request(NS, ID, Args, Range, CtxOpts) ->
         id => ID,
         range => Range,
         args => machinery_utils:encode(args, Args),
-        context => machinery_utils:encode(context, machinery_utils:add_otel_context(maps:with([woody_ctx], CtxOpts)))
+        context => machinery_utils:encode(
+            context,
+            woody_rpc_helper:encode_rpc_context(
+                maps:get(woody_ctx, CtxOpts, woody_context:new()),
+                otel_ctx:get_current()
+            )
+        )
     }).
 
 build_schema_context(NS, ID) ->
@@ -236,14 +249,18 @@ build_schema_context(NS, ID) ->
 
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
-    ProcessCtx = machinery_utils:decode(context, BinCtx),
-    ok = machinery_utils:attach_otel_context(ProcessCtx),
+    {WoodyCtx, OtelCtx} = woody_rpc_helper:decode_rpc_context(machinery_utils:decode(context, BinCtx)),
+    ok = woody_rpc_helper:attach_otel_context(OtelCtx),
     NS = get_namespace(Opts),
     ID = maps:get(process_id, Process),
     SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
     ?WITH_OTEL_SPAN(<<"processing">>, SpanOpts, fun(_SpanCtx) ->
         try
-            do_process(CallType, BinArgs, Process, Opts, ProcessCtx)
+            %% NOTE Process context must conform type `handler_opts/0`
+            do_process(CallType, BinArgs, Process, Opts, #{
+                otel_ctx => OtelCtx,
+                woody_ctx => WoodyCtx
+            })
         catch
             Class:Reason:Stacktrace ->
                 _ = ?record_exception(Class, Reason, Stacktrace, process_tags(NS, ID)),

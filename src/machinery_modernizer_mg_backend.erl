@@ -30,7 +30,8 @@
 
 -type handler_opts() ::
     machinery:handler_opts(#{
-        woody_ctx := woody_context:ctx()
+        woody_ctx := woody_context:ctx(),
+        otel_ctx => otel_ctx:t()
     }).
 
 -type backend_handler_opts() :: #{

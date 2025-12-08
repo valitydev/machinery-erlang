@@ -181,7 +181,11 @@ migrate_machine(NS, ID, History, AuxState, TimestampSec, SimpleStatus, Opts) ->
             action => Action
         },
         context => machinery_utils:encode(
-            context, machinery_utils:add_otel_context(maps:with([woody_ctx], FallbackOpts))
+            context,
+            woody_rpc_helper:encode_rpc_context(
+                maps:get(woody_ctx, FallbackOpts, woody_context:new()),
+                otel_ctx:get_current()
+            )
         )
     },
     case progressor:put(Req) of
