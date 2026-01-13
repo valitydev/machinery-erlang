@@ -249,7 +249,7 @@ build_schema_context(NS, ID) ->
 
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
-    {WoodyCtx, OtelCtx} = woody_rpc_helper:decode_rpc_context(machinery_utils:decode(context, BinCtx)),
+    {WoodyCtx, OtelCtx} = decode_rpc_context(BinCtx),
     ok = woody_rpc_helper:attach_otel_context(OtelCtx),
     NS = get_namespace(Opts),
     ID = maps:get(process_id, Process),
@@ -346,6 +346,11 @@ process_tags(Namespace, ID) ->
         <<"progressor.process.ns">> => Namespace,
         <<"progressor.process.id">> => ID
     }.
+
+decode_rpc_context(<<>>) ->
+    woody_rpc_helper:decode_rpc_context(#{});
+decode_rpc_context(BinCtx) ->
+    woody_rpc_helper:decode_rpc_context(marshal(term, BinCtx)).
 
 %% Marshalling
 
