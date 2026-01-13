@@ -350,7 +350,7 @@ process_tags(Namespace, ID) ->
 decode_rpc_context(<<>>) ->
     woody_rpc_helper:decode_rpc_context(#{});
 decode_rpc_context(BinCtx) ->
-    woody_rpc_helper:decode_rpc_context(marshal(term, BinCtx)).
+    woody_rpc_helper:decode_rpc_context(machinery_utils:decode(context, BinCtx)).
 
 %% Marshalling
 
