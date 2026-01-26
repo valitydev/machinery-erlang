@@ -47,6 +47,9 @@
         otel_ctx => otel_ctx:t()
     }).
 
+%% FIXME DEBUG
+-define(WITH_OTEL, true).
+
 -ifdef(WITH_OTEL).
 -define(WITH_OTEL_SPAN(N, O, F), ?with_span(N, O, F)).
 -else.
@@ -249,11 +252,17 @@ build_schema_context(NS, ID) ->
 
 -spec process({task_t(), encoded_args(), process()}, backend_opts(), encoded_ctx()) -> process_result().
 process({CallType, BinArgs, Process}, Opts, BinCtx) ->
+    ProgressorSpanLink = opentelemetry:link(otel_tracer:current_span_ctx(otel_ctx:get_current())),
     {WoodyCtx, OtelCtx} = decode_rpc_context(BinCtx),
     ok = woody_rpc_helper:attach_otel_context(OtelCtx),
     NS = get_namespace(Opts),
     ID = maps:get(process_id, Process),
-    SpanOpts = #{kind => ?SPAN_KIND_INTERNAL, attributes => process_tags(NS, ID)},
+    SpanOpts = #{
+        kind => ?SPAN_KIND_INTERNAL,
+        attributes => process_tags(NS, ID),
+        links => genlib_list:compact([ProgressorSpanLink])
+    },
+    %% FIXME Span not exported!
     ?WITH_OTEL_SPAN(<<"processing">>, SpanOpts, fun(_SpanCtx) ->
         try
             %% NOTE Process context must conform type `handler_opts/0`
