@@ -100,6 +100,8 @@ call(NS, ID, Range, Args, CtxOpts) ->
             %% process status guard
             {error, <<"process is error">>} ->
                 erlang:error({failed, NS, ID});
+            {error, <<"process is init">>} ->
+                {error, notfound};
             {error, _Reason} = Error ->
                 %% NOTE Wtf, review specs
                 {ok, Error}
@@ -127,6 +129,8 @@ repair(NS, ID, Range, Args, CtxOpts) ->
             %% process status guard
             {error, <<"process is error">>} ->
                 erlang:error({failed, NS, ID});
+            {error, <<"process is init">>} ->
+                {error, notfound};
             {error, Reason} ->
                 {error, {failed, machinery_utils:decode(term, Reason)}}
         end
