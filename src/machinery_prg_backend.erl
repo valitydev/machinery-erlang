@@ -47,19 +47,7 @@
         otel_ctx => otel_ctx:t()
     }).
 
-%% FIXME DEBUG
--define(WITH_OTEL, true).
-
--ifdef(WITH_OTEL).
 -define(WITH_OTEL_SPAN(N, O, F), ?with_span(N, O, F)).
--else.
--define(WITH_OTEL_SPAN(N, O, F), begin
-    _ = N,
-    %% NOTE Prevents 'a term is constructed, but never used'
-    #{} = O,
-    F(otel_tracer_noop:noop_span_ctx())
-end).
--endif.
 
 %% NOTE Ignore stacktrace to conform progressor's exception tuple
 -define(PROCESSOR_EXCEPTION(Class, Reason, _Stacktrace), {exception, Class, Reason}).
