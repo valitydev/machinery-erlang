@@ -8,6 +8,8 @@
 -export([stop_app/1]).
 
 -export([makeup_cfg/2]).
+-export([with_span/3]).
+-export([end_span/1]).
 
 -export([woody_ctx/0]).
 -export([get_woody_ctx/1]).
@@ -53,6 +55,13 @@ start_apps(AppNames) ->
 -spec start_app(app_name() | {app_name(), app_env()}) -> {[Started :: app_name()], startup_ctx()}.
 start_app({AppName, Env}) ->
     {start_app_with(AppName, Env), #{}};
+start_app(opentelemetry = AppName) ->
+    {
+        start_app_with(AppName, [
+            {span_processor, simple}
+        ]),
+        #{}
+    };
 start_app(scoper = AppName) ->
     {
         start_app_with(AppName, [
@@ -135,6 +144,24 @@ stop_app(AppName) ->
 -spec makeup_cfg([config_mut_fun()], config()) -> config().
 makeup_cfg(CMFs, C0) ->
     lists:foldl(fun(CMF, C) -> CMF(C) end, C0, CMFs).
+
+-spec with_span(module(), atom(), config()) -> config().
+with_span(Mod, TestCaseName, C0) ->
+    SpanName = iolist_to_binary([atom_to_binary(Mod), ":", atom_to_binary(TestCaseName), "/1"]),
+    SpanCtx = otel_tracer:start_span(opentelemetry:get_application_tracer(Mod), SpanName, #{kind => internal}),
+    %% NOTE This also puts otel context to process dictionary
+    _ = otel_tracer:set_current_span(SpanCtx),
+    [{span_ctx, SpanCtx} | C0].
+
+-spec end_span(config()) -> ok.
+end_span(C) ->
+    case lists:keyfind(span_ctx, 1, C) of
+        {span_ctx, SpanCtx} ->
+            _ = otel_span:end_span(SpanCtx),
+            ok;
+        _ ->
+            ok
+    end.
 
 -spec woody_ctx() -> config_mut_fun().
 woody_ctx() ->
