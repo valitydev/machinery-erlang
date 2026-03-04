@@ -37,7 +37,7 @@
  {<<"parse_trans">>,{pkg,<<"parse_trans">>,<<"3.3.1">>},2},
  {<<"progressor">>,
   {git,"https://github.com/valitydev/progressor.git",
-       {ref,"6033631d3e1eb9593acf7841d8a635146ff482e8"}},
+       {ref,"662fee014b1e8bccd72ec3a5959c2fd76a299274"}},
   0},
  {<<"prometheus">>,{pkg,<<"prometheus">>,<<"4.8.1">>},0},
  {<<"quantile_estimator">>,{pkg,<<"quantile_estimator">>,<<"0.2.1">>},1},

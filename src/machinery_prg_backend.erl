@@ -359,9 +359,9 @@ decode_rpc_context(BinCtx) ->
 %% Marshalling
 
 marshal(timeout, {timeout, V}) when is_integer(V) ->
-    erlang:system_time(second) + V;
-marshal(timeout, {deadline, {V = {_Date, _Time}, _Micro}}) ->
-    genlib_time:daytime_to_unixtime(V);
+    erlang:system_time(microsecond) + (V * 1000000);
+marshal(timeout, {deadline, {V = {_Date, _Time}, Micro}}) ->
+    (genlib_time:daytime_to_unixtime(V) * 1000000) + Micro;
 marshal(actions, V) when is_list(V) ->
     lists:foldl(
         fun
@@ -395,7 +395,7 @@ marshal({event_bodies, Schema, SContext}, {LatestID, Events}) ->
                 %% process_id := id(),
                 %% task_id := task_id(),
                 event_id => ID,
-                timestamp => genlib_time:now(),
+                timestamp => erlang:system_time(microsecond),
                 metadata => #{<<"format">> => Version},
                 payload => machinery_utils:encode(term, Event)
             }
@@ -408,15 +408,18 @@ unmarshal({event, Schema, Context0}, V) ->
     %% process_id := id(),
     %% task_id := task_id(),
     %% event_id := event_id(),
-    %% timestamp := timestamp_sec(),
+    %% timestamp := timestamp_us(),
     %% metadata => #{format => pos_integer()},
     %% payload := binary()
     Metadata = maps:get(metadata, V, #{}),
     Version = maps:get(<<"format">>, Metadata, 0),
     Payload0 = maps:get(payload, V),
     Payload1 = machinery_utils:decode(term, Payload0),
-    DateTime = calendar:system_time_to_universal_time(maps:get(timestamp, V), 1),
-    CreatedAt = {DateTime, 0},
+    TimestampUs = maps:get(timestamp, V),
+    MicroSec = TimestampUs rem 1000000,
+    Sec = TimestampUs div 1000000,
+    DateTime = calendar:system_time_to_universal_time(Sec, 1),
+    CreatedAt = {DateTime, MicroSec},
     Context1 = Context0#{created_at => CreatedAt},
     % It is expected that schema doesn't want to save anything in the context here.
     {Payload2, Context1} = machinery_mg_schema:unmarshal(Schema, {event, Version}, Payload1, Context1),
