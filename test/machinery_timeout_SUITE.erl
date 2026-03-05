@@ -159,25 +159,31 @@ trace_process_call_with_timer_test(C) ->
     ?assertMatch(
         {ok, [
             #{
-                error := null,
                 args := nop,
                 running := _,
                 finished := _,
+                context := #{
+                    <<"otel">> := _,
+                    <<"woody">> := _
+                },
                 events := [],
+                response := {ok, ok},
                 task_id := _,
                 task_type := <<"init">>,
                 task_status := <<"finished">>,
                 scheduled := _,
                 retry_interval := 0,
                 retry_attempts := 0,
-                otel_trace_id := null,
                 task_metadata := #{<<"range">> := #{}}
             },
             #{
-                error := null,
                 args := timer,
                 running := _,
                 finished := _,
+                context := #{
+                    <<"otel">> := _,
+                    <<"woody">> := _
+                },
                 events := [
                     {1, {{{_, _, _}, {_, _, _}}, _}, 1},
                     {2, {{{_, _, _}, {_, _, _}}, _}, 2},
@@ -190,28 +196,31 @@ trace_process_call_with_timer_test(C) ->
                     {9, {{{_, _, _}, {_, _, _}}, _}, 9},
                     {10, {{{_, _, _}, {_, _, _}}, _}, 10}
                 ],
+                response := {ok, done},
                 task_id := _,
                 task_type := <<"call">>,
                 task_status := <<"finished">>,
                 scheduled := _,
                 retry_interval := 0,
                 retry_attempts := 0,
-                otel_trace_id := null,
                 task_metadata := #{<<"range">> := #{<<"direction">> := <<"forward">>}}
             },
             #{
-                error := null,
                 args := undefined,
                 running := _,
                 finished := _,
+                context := #{
+                    <<"otel">> := _,
+                    <<"woody">> := _
+                },
                 events := [{11, {{{_, _, _}, {_, _, _}}, _}, timer_fired}],
+                response := {ok, ok},
                 task_id := _,
                 task_type := <<"timeout">>,
                 task_status := <<"finished">>,
                 scheduled := _,
                 retry_interval := 0,
-                retry_attempts := 0,
-                otel_trace_id := null
+                retry_attempts := 0
             }
         ]},
         trace(ID, C)
