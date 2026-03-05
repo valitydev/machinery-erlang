@@ -85,6 +85,8 @@ encode(term, V) ->
     erlang:term_to_binary(V).
 
 -spec decode(atom(), binary()) -> term().
+decode(args, <<>>) ->
+    undefined;
 decode(args, V) ->
     decode(term, V);
 decode(context, V) ->

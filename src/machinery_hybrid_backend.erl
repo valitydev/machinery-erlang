@@ -15,6 +15,7 @@
 -export([get/4]).
 -export([notify/5]).
 -export([remove/3]).
+-export([trace/3]).
 
 %% API
 
@@ -78,6 +79,10 @@ remove(NS, ID, Opts) ->
     %% No need in migration
     _ = call_backend(fallback_backend, remove, [NS, ID], Opts),
     call_backend(primary_backend, remove, [NS, ID], Opts).
+
+-spec trace(machinery:namespace(), machinery:id(), backend_opts()) -> no_return().
+trace(_, _, _) ->
+    erlang:error(not_implemented).
 
 %%
 

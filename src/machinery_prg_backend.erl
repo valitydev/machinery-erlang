@@ -15,6 +15,7 @@
 -export([get/4]).
 -export([notify/5]).
 -export([remove/3]).
+-export([trace/3]).
 
 %% Progressor processor callback
 -export([process/3]).
@@ -189,7 +190,113 @@ remove(NS, ID, CtxOpts) ->
         end
     end).
 
+-spec trace(machinery:namespace(), machinery:id(), backend_opts()) -> _.
+trace(NS, ID, Opts) ->
+    case progressor:trace(#{ns => NS, id => ID}) of
+        {ok, RawTrace} ->
+            Schema = get_schema(Opts),
+            SContext0 = build_schema_context(NS, ID),
+            Trace = unmarshal_trace(RawTrace, Schema, SContext0),
+            {ok, Trace};
+        {error, _} = Error ->
+            Error
+    end.
+
 %%
+
+unmarshal_trace(RawTrace, Schema, SContext0) ->
+    lists:map(fun(RawTraceUnit) -> unmarshal_trace_unit(RawTraceUnit, Schema, SContext0) end, RawTrace).
+
+unmarshal_trace_unit(TraceUnit, Schema, SContext0) ->
+    Events = unmarshal_trace_events(maps:get(events, TraceUnit, []), Schema, SContext0),
+    Args = machinery_utils:decode(args, maps:get(args, TraceUnit, undefined)),
+    OtelTraceID = extract_trace_id(TraceUnit),
+    Error = extract_error(TraceUnit),
+    maps:merge(
+        maps:without([response, context], TraceUnit),
+        #{args => Args, events => Events, otel_trace_id => OtelTraceID, error => Error}
+    ).
+
+unmarshal_trace_events(BinEvents, Schema, SContext0) ->
+    [unmarshal_trace_event(Event, Schema, SContext0) || Event <- BinEvents].
+
+unmarshal_trace_event(
+    #{
+        event_payload := Payload,
+        event_timestamp := Ts,
+        event_id := EvID,
+        event_metadata := Meta0
+    },
+    Schema,
+    SContext0
+) ->
+    Meta = ensure_metadata_format(Meta0),
+    Ev = #{payload => Payload, timestamp => Ts, event_id => EvID, metadata => Meta},
+    unmarshal({event, Schema, SContext0}, Ev).
+
+ensure_metadata_format(Meta) ->
+    case maps:get(<<"format">>, Meta, <<"undefined">>) of
+        <<"undefined">> -> #{<<"format">> => 0};
+        _ -> Meta
+    end.
+
+is_printable_string(V) ->
+    try unicode:characters_to_binary(V) of
+        B when is_binary(B) ->
+            true;
+        _ ->
+            false
+    catch
+        _:_ ->
+            false
+    end.
+
+maybe_format(Data) when is_binary(Data) ->
+    case is_printable_string(Data) of
+        true ->
+            #{
+                content_type => <<"text">>,
+                content => Data
+            };
+        false ->
+            term_to_object_content(Data)
+    end;
+maybe_format(Data) ->
+    #{
+        content_type => <<"unknown">>,
+        content => format(Data)
+    }.
+
+format(Data) ->
+    unicode:characters_to_binary(io_lib:format("~p", [Data])).
+
+extract_trace_id(#{context := <<>>}) ->
+    null;
+extract_trace_id(#{context := BinContext}) ->
+    try binary_to_term(BinContext) of
+        #{<<"otel">> := [TraceID | _]} ->
+            TraceID;
+        _ ->
+            null
+    catch
+        _:_ ->
+            null
+    end.
+
+extract_error(#{task_status := <<"error">>, response := {error, ReasonTerm}}) ->
+    #{content := Content} = maybe_format(ReasonTerm),
+    Content;
+extract_error(_) ->
+    null.
+
+term_to_object_content(Term) ->
+    term_to_object_content(<<"base64">>, base64:encode(Term)).
+
+term_to_object_content(CType, Term) ->
+    #{
+        <<"content_type">> => CType,
+        <<"content">> => Term
+    }.
 
 % After querying resulting list is expected to be sorted with id
 % values ascending before returning it as events.

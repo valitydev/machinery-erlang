@@ -92,6 +92,7 @@
 -export([get/4]).
 -export([notify/5]).
 -export([remove/3]).
+-export([trace/3]).
 
 %% Woody handler
 -behaviour(woody_server_thrift_handler).
@@ -224,6 +225,10 @@ remove(NS, ID, Opts) ->
         {exception, #mg_stateproc_NamespaceNotFound{}} ->
             error({namespace_not_found, NS})
     end.
+
+-spec trace(machinery:namespace(), machinery:id(), backend_opts()) -> no_return().
+trace(_, _, _) ->
+    erlang:error(not_implemented).
 
 %% Woody handler
 

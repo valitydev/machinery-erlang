@@ -22,6 +22,7 @@
 -export([call_with_timer_test/1]).
 -export([call_with_continue_test/1]).
 -export([call_with_ranged_timer_test/1]).
+-export([trace_process_call_with_timer_test/1]).
 
 %% Machinery callbacks
 
@@ -49,7 +50,10 @@ all() ->
 groups() ->
     [
         {machinery_mg_backend, [], [{group, all}]},
-        {machinery_prg_backend, [], [{group, all_wo_ranged}]},
+        {machinery_prg_backend, [], [
+            {group, all_wo_ranged},
+            trace_process_call_with_timer_test
+        ]},
         {all, [parallel], [
             start_with_timer_test,
             start_with_continue_test,
@@ -146,6 +150,73 @@ call_with_timer_test(C) ->
     Expected = lists:seq(1, 10),
     ?assertMatch({ok, #{aux_state := Expected}}, get(ID, C)).
 
+-spec trace_process_call_with_timer_test(config()) -> test_return().
+trace_process_call_with_timer_test(C) ->
+    ID = unique(),
+    ?assertEqual(ok, start(ID, nop, C)),
+    ?assertEqual({ok, done}, call(ID, timer, C)),
+    timer:sleep(timer:seconds(5)),
+    ?assertMatch(
+        {ok, [
+            #{
+                error := null,
+                args := nop,
+                running := _,
+                finished := _,
+                events := [],
+                task_id := _,
+                task_type := <<"init">>,
+                task_status := <<"finished">>,
+                scheduled := _,
+                retry_interval := 0,
+                retry_attempts := 0,
+                otel_trace_id := null,
+                task_metadata := #{<<"range">> := #{}}
+            },
+            #{
+                error := null,
+                args := timer,
+                running := _,
+                finished := _,
+                events := [
+                    {1, {{{_, _, _}, {_, _, _}}, _}, 1},
+                    {2, {{{_, _, _}, {_, _, _}}, _}, 2},
+                    {3, {{{_, _, _}, {_, _, _}}, _}, 3},
+                    {4, {{{_, _, _}, {_, _, _}}, _}, 4},
+                    {5, {{{_, _, _}, {_, _, _}}, _}, 5},
+                    {6, {{{_, _, _}, {_, _, _}}, _}, 6},
+                    {7, {{{_, _, _}, {_, _, _}}, _}, 7},
+                    {8, {{{_, _, _}, {_, _, _}}, _}, 8},
+                    {9, {{{_, _, _}, {_, _, _}}, _}, 9},
+                    {10, {{{_, _, _}, {_, _, _}}, _}, 10}
+                ],
+                task_id := _,
+                task_type := <<"call">>,
+                task_status := <<"finished">>,
+                scheduled := _,
+                retry_interval := 0,
+                retry_attempts := 0,
+                otel_trace_id := null,
+                task_metadata := #{<<"range">> := #{<<"direction">> := <<"forward">>}}
+            },
+            #{
+                error := null,
+                args := undefined,
+                running := _,
+                finished := _,
+                events := [{11, {{{_, _, _}, {_, _, _}}, _}, timer_fired}],
+                task_id := _,
+                task_type := <<"timeout">>,
+                task_status := <<"finished">>,
+                scheduled := _,
+                retry_interval := 0,
+                retry_attempts := 0,
+                otel_trace_id := null
+            }
+        ]},
+        trace(ID, C)
+    ).
+
 -spec call_with_continue_test(config()) -> test_return().
 call_with_continue_test(C) ->
     ID = unique(),
@@ -237,6 +308,9 @@ call(ID, Args, C) ->
 
 get(ID, C) ->
     machinery:get(namespace(), ID, get_backend(C)).
+
+trace(ID, C) ->
+    machinery:trace(namespace(), ID, get_backend(C)).
 
 namespace() ->
     general.
