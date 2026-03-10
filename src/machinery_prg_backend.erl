@@ -423,7 +423,7 @@ marshal(actions, V) when is_list(V) ->
             %% 'set_timer' key must not be present for action to succeed.
             (remove, _) -> #{remove => true};
             (unset_timer, _) -> unset_timer;
-            (continue, _) -> #{set_timer => erlang:system_time(second)};
+            (continue, _) -> #{set_timer => erlang:system_time(microsecond)};
             (_, A) -> A
         end,
         undefined,
