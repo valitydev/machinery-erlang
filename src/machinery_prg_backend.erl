@@ -15,6 +15,7 @@
 -export([get/4]).
 -export([notify/5]).
 -export([remove/3]).
+-export([trace/3]).
 
 %% Progressor processor callback
 -export([process/3]).
@@ -189,7 +190,54 @@ remove(NS, ID, CtxOpts) ->
         end
     end).
 
+-spec trace(machinery:namespace(), machinery:id(), backend_opts()) -> _.
+trace(NS, ID, Opts) ->
+    case progressor:trace(#{ns => NS, id => ID}) of
+        {ok, RawTrace} ->
+            Schema = get_schema(Opts),
+            SContext0 = build_schema_context(NS, ID),
+            Trace = unmarshal_trace(RawTrace, Schema, SContext0),
+            {ok, Trace};
+        {error, _} = Error ->
+            Error
+    end.
+
 %%
+
+unmarshal_trace(RawTrace, Schema, SContext0) ->
+    lists:map(fun(RawTraceUnit) -> unmarshal_trace_unit(RawTraceUnit, Schema, SContext0) end, RawTrace).
+
+unmarshal_trace_unit(TraceUnit, Schema, SContext0) ->
+    Events = unmarshal_trace_events(maps:get(events, TraceUnit, []), Schema, SContext0),
+    Args = machinery_utils:decode(args, maps:get(args, TraceUnit, undefined)),
+    Context = machinery_utils:decode(term, maps:get(context, TraceUnit, undefined)),
+    maps:merge(
+        TraceUnit,
+        #{args => Args, events => Events, context => Context}
+    ).
+
+unmarshal_trace_events(BinEvents, Schema, SContext0) ->
+    [unmarshal_trace_event(Event, Schema, SContext0) || Event <- BinEvents].
+
+unmarshal_trace_event(
+    #{
+        event_payload := Payload,
+        event_timestamp := Ts,
+        event_id := EvID,
+        event_metadata := Meta0
+    },
+    Schema,
+    SContext0
+) ->
+    Meta = ensure_metadata_format(Meta0),
+    Ev = #{payload => Payload, timestamp => Ts, event_id => EvID, metadata => Meta},
+    unmarshal({event, Schema, SContext0}, Ev).
+
+ensure_metadata_format(Meta) ->
+    case maps:get(<<"format">>, Meta, <<"undefined">>) of
+        <<"undefined">> -> #{<<"format">> => 0};
+        _ -> Meta
+    end.
 
 % After querying resulting list is expected to be sorted with id
 % values ascending before returning it as events.
@@ -359,9 +407,9 @@ decode_rpc_context(BinCtx) ->
 %% Marshalling
 
 marshal(timeout, {timeout, V}) when is_integer(V) ->
-    erlang:system_time(second) + V;
-marshal(timeout, {deadline, {V = {_Date, _Time}, _Micro}}) ->
-    genlib_time:daytime_to_unixtime(V);
+    erlang:system_time(microsecond) + (V * 1000000);
+marshal(timeout, {deadline, {V = {_Date, _Time}, Micro}}) ->
+    (genlib_time:daytime_to_unixtime(V) * 1000000) + Micro;
 marshal(actions, V) when is_list(V) ->
     lists:foldl(
         fun
@@ -375,7 +423,7 @@ marshal(actions, V) when is_list(V) ->
             %% 'set_timer' key must not be present for action to succeed.
             (remove, _) -> #{remove => true};
             (unset_timer, _) -> unset_timer;
-            (continue, _) -> #{set_timer => erlang:system_time(second)};
+            (continue, _) -> #{set_timer => erlang:system_time(microsecond)};
             (_, A) -> A
         end,
         undefined,
@@ -395,7 +443,7 @@ marshal({event_bodies, Schema, SContext}, {LatestID, Events}) ->
                 %% process_id := id(),
                 %% task_id := task_id(),
                 event_id => ID,
-                timestamp => genlib_time:now(),
+                timestamp => erlang:system_time(microsecond),
                 metadata => #{<<"format">> => Version},
                 payload => machinery_utils:encode(term, Event)
             }
@@ -408,15 +456,18 @@ unmarshal({event, Schema, Context0}, V) ->
     %% process_id := id(),
     %% task_id := task_id(),
     %% event_id := event_id(),
-    %% timestamp := timestamp_sec(),
+    %% timestamp := timestamp_us(),
     %% metadata => #{format => pos_integer()},
     %% payload := binary()
     Metadata = maps:get(metadata, V, #{}),
     Version = maps:get(<<"format">>, Metadata, 0),
     Payload0 = maps:get(payload, V),
     Payload1 = machinery_utils:decode(term, Payload0),
-    DateTime = calendar:system_time_to_universal_time(maps:get(timestamp, V), 1),
-    CreatedAt = {DateTime, 0},
+    TimestampUs = maps:get(timestamp, V),
+    MicroSec = TimestampUs rem 1000000,
+    Sec = TimestampUs div 1000000,
+    DateTime = calendar:system_time_to_universal_time(Sec, 1),
+    CreatedAt = {DateTime, MicroSec},
     Context1 = Context0#{created_at => CreatedAt},
     % It is expected that schema doesn't want to save anything in the context here.
     {Payload2, Context1} = machinery_mg_schema:unmarshal(Schema, {event, Version}, Payload1, Context1),

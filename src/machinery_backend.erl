@@ -10,6 +10,7 @@
 -export([get/5]).
 -export([notify/6]).
 -export([remove/4]).
+-export([trace/4]).
 
 %% Behaviour definition
 
@@ -31,6 +32,8 @@
 -callback notify(namespace(), id(), range(), args(), backend_opts()) -> ok | {error, notfound} | no_return().
 
 -callback remove(namespace(), id(), backend_opts()) -> ok | {error, notfound}.
+
+-callback trace(namespace(), id(), backend_opts()) -> any().
 
 %% API
 
@@ -61,3 +64,7 @@ notify(Backend, Namespace, Id, Range, Args, Opts) ->
 -spec remove(backend(), namespace(), id(), backend_opts()) -> ok | {error, notfound}.
 remove(Backend, Namespace, Id, Opts) ->
     Backend:remove(Namespace, Id, Opts).
+
+-spec trace(backend(), namespace(), id(), backend_opts()) -> _.
+trace(Backend, Namespace, Id, Opts) ->
+    Backend:trace(Namespace, Id, Opts).
