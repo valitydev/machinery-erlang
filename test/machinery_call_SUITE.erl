@@ -13,6 +13,7 @@
 -export([init_per_group/2]).
 -export([end_per_group/2]).
 -export([init_per_testcase/2]).
+-export([end_per_testcase/2]).
 
 %% Tests
 
@@ -70,7 +71,7 @@ groups() ->
 
 -spec init_per_suite(config()) -> config().
 init_per_suite(C) ->
-    {StartedApps, _StartupCtx} = ct_helper:start_apps([machinery]),
+    {StartedApps, _StartupCtx} = ct_helper:start_apps([machinery, opentelemetry_exporter, opentelemetry]),
     [{started_apps, StartedApps} | C].
 
 -spec end_per_suite(config()) -> _.
@@ -111,7 +112,13 @@ end_per_group(_Name, C) ->
 
 -spec init_per_testcase(test_case_name(), config()) -> config().
 init_per_testcase(TestCaseName, C) ->
-    ct_helper:makeup_cfg([ct_helper:test_case_name(TestCaseName), ct_helper:woody_ctx()], C).
+    ct_helper:with_span(
+        ?MODULE, TestCaseName, ct_helper:makeup_cfg([ct_helper:test_case_name(TestCaseName), ct_helper:woody_ctx()], C)
+    ).
+
+-spec end_per_testcase(test_case_name(), config()) -> ok.
+end_per_testcase(_Name, C) ->
+    ct_helper:end_span(C).
 
 %% Tests
 
