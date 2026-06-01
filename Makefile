@@ -15,8 +15,8 @@ DEV_IMAGE_TAG = $(TEST_CONTAINER_NAME)-dev
 DEV_IMAGE_ID = $(file < .image.dev)
 
 DOCKER ?= docker
-DOCKERCOMPOSE ?= docker-compose
-DOCKERCOMPOSE_W_ENV = DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE)
+DOCKERCOMPOSE ?= docker compose
+DOCKERCOMPOSE_W_ENV = DEV_IMAGE_TAG=$(DEV_IMAGE_TAG) $(DOCKERCOMPOSE) -f compose.yaml -f compose.tracing.yaml
 REBAR ?= rebar3
 TEST_CONTAINER_NAME ?= testrunner
 
@@ -28,7 +28,7 @@ dev-image: .image.dev
 
 .image.dev: Dockerfile.dev .env
 	env $(DOTENV) $(DOCKERCOMPOSE_W_ENV) build $(TEST_CONTAINER_NAME)
-	$(DOCKER) image ls -q -f "reference=$(DEV_IMAGE_TAG)" | head -n1 > $@
+	$(DOCKER) image ls -q -f "reference=$(DEV_IMAGE_ID)" | head -n1 > $@
 
 clean-dev-image:
 ifneq ($(DEV_IMAGE_ID),)
@@ -50,13 +50,12 @@ wc-shell: dev-image
 wc-%: dev-image
 	$(DOCKER_RUN) $(DEV_IMAGE_TAG) make $*
 
-#  TODO docker compose down doesn't work yet
 wdeps-shell: dev-image
 	$(DOCKERCOMPOSE_RUN) $(TEST_CONTAINER_NAME) su; \
 	$(DOCKERCOMPOSE_W_ENV) down
 
 wdeps-%: dev-image
-	$(DOCKERCOMPOSE_RUN) -T $(TEST_CONTAINER_NAME) make $*; \
+	$(DOCKERCOMPOSE_RUN) -T $(TEST_CONTAINER_NAME) make $(if $(MAKE_ARGS),$(MAKE_ARGS) $*,$*); \
 	res=$$?; \
 	$(DOCKERCOMPOSE_W_ENV) down; \
 	exit $$res
@@ -80,9 +79,6 @@ check-format:
 
 dialyze:
 	$(REBAR) as test dialyzer
-
-release:
-	$(REBAR) as prod release
 
 eunit:
 	$(REBAR) eunit --cover
